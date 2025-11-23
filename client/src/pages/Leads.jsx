@@ -1,26 +1,50 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
-import { Upload, Search, Phone } from 'lucide-react';
+import { Upload, Search, Phone, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ImportModal from '../components/leads/ImportModal';
 
 const Leads = () => {
   const [leads, setLeads] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
-    fetchLeads();
+    fetchData();
   }, []);
 
-  const fetchLeads = async () => {
+  const fetchData = async () => {
     try {
-      const response = await api.get('/leads');
-      setLeads(response.data.data);
+      const [leadsRes, campaignsRes] = await Promise.all([
+        api.get('/leads'),
+        api.get('/campaigns'),
+      ]);
+      setLeads(leadsRes.data.data);
+      setCampaigns(campaignsRes.data.data);
     } catch (error) {
-      toast.error('Failed to fetch leads');
+      toast.error('Failed to fetch data');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleImportSuccess = () => {
+    fetchData();
+  };
+
+  const downloadTemplate = () => {
+    const headers = ['phone', 'firstName', 'lastName', 'email', 'altPhone', 'street', 'city', 'state', 'zipCode'];
+    const csvContent = headers.join(',') + '\n+639171234567,Juan,Dela Cruz,juan@email.com,+639181234567,123 Main St,Manila,Metro Manila,1000';
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'leads_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const filteredLeads = leads.filter(
@@ -42,10 +66,23 @@ const Leads = () => {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Leads</h1>
-        <button className="btn btn-primary flex items-center">
-          <Upload className="h-5 w-5 mr-2" />
-          Import Leads
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={downloadTemplate}
+            className="btn btn-secondary flex items-center"
+            title="Download CSV template"
+          >
+            <Download className="h-5 w-5 mr-2" />
+            Template
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="btn btn-primary flex items-center"
+          >
+            <Upload className="h-5 w-5 mr-2" />
+            Import Leads
+          </button>
+        </div>
       </div>
 
       <div className="card">
@@ -116,6 +153,13 @@ const Leads = () => {
           </div>
         )}
       </div>
+
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        campaigns={campaigns}
+        onSuccess={handleImportSuccess}
+      />
     </div>
   );
 };

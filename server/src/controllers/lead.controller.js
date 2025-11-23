@@ -1,5 +1,7 @@
 import { validationResult } from 'express-validator';
+import path from 'path';
 import { supabase } from '../config/supabase.js';
+import { parseCSV, parseExcel, importLeads } from '../services/import.service.js';
 
 export const getLeads = async (req, res, next) => {
   try {
@@ -307,6 +309,54 @@ export const addNote = async (req, res, next) => {
         _id: updatedLead.id,
         notes: updatedLead.notes,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const importLeadsFromFile = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400);
+      throw new Error('No file uploaded');
+    }
+
+    const { campaignId, fieldMapping } = req.body;
+
+    if (!campaignId) {
+      res.status(400);
+      throw new Error('Campaign ID is required');
+    }
+
+    const filePath = req.file.path;
+    const ext = path.extname(req.file.originalname).toLowerCase();
+
+    let data;
+    if (ext === '.csv') {
+      data = await parseCSV(filePath);
+    } else {
+      data = parseExcel(filePath);
+    }
+
+    if (data.length === 0) {
+      res.status(400);
+      throw new Error('File is empty');
+    }
+
+    // Parse field mapping if provided as string
+    const mapping = fieldMapping ? JSON.parse(fieldMapping) : {};
+
+    const result = await importLeads(campaignId, data, mapping);
+
+    res.json({
+      success: true,
+      data: {
+        imported: result.imported,
+        errors: result.errors,
+        total: result.total,
+      },
+      message: `Successfully imported ${result.imported} of ${result.total} leads`,
     });
   } catch (error) {
     next(error);
