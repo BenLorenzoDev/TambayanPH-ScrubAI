@@ -1,0 +1,31 @@
+{
+  "name": "tambayanph-scrubai",
+  "version": "1.0.0",
+  "description": "Call center management system with real-time call monitoring, dialer, and agent dashboard",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "build": "npm run build --workspace=client",
+    "start": "npm run start --workspace=server",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BenLorenzoDev/TambayanPH-ScrubAI.git"
+  },
+  "author": "BenLorenzoDev",
+  "license": "MIT"
+}
