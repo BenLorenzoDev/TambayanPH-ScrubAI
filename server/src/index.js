@@ -10,6 +10,8 @@ import userRoutes from './routes/user.routes.js';
 import campaignRoutes from './routes/campaign.routes.js';
 import leadRoutes from './routes/lead.routes.js';
 import callRoutes from './routes/call.routes.js';
+import reportRoutes from './routes/report.routes.js';
+import vapiRoutes from './routes/vapi.routes.js';
 import { initializeSocket } from './socket/index.js';
 
 const app = express();
@@ -46,6 +48,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/calls', callRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/vapi', vapiRoutes);
 
 // Error handling
 app.use(notFound);

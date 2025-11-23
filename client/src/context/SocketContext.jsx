@@ -12,9 +12,10 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     if (user) {
       const token = localStorage.getItem('token');
-      const newSocket = io('/', {
+      const socketUrl = import.meta.env.VITE_API_URL || '/';
+      const newSocket = io(socketUrl, {
         auth: { token },
-        transports: ['websocket'],
+        transports: ['websocket', 'polling'],
       });
 
       newSocket.on('connect', () => {

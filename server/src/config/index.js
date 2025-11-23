@@ -23,5 +23,11 @@ export default {
     phoneNumber: process.env.TWILIO_PHONE_NUMBER,
   },
 
+  vapi: {
+    apiKey: process.env.VAPI_API_KEY,
+    assistantId: process.env.VAPI_ASSISTANT_ID,
+    phoneId: process.env.VAPI_PHONE_ID,
+  },
+
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
 };
