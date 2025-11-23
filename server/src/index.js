@@ -3,7 +3,6 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import config from './config/index.js';
-import connectDB from './config/database.js';
 import logger from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/error.middleware.js';
 import authRoutes from './routes/auth.routes.js';
@@ -24,9 +23,6 @@ const io = new Server(httpServer, {
     credentials: true,
   },
 });
-
-// Connect to MongoDB
-connectDB();
 
 // Middleware
 app.use(cors({
@@ -61,6 +57,7 @@ initializeSocket(io);
 // Start server
 httpServer.listen(config.port, () => {
   logger.info(`Server running in ${config.env} mode on port ${config.port}`);
+  logger.info(`Using Supabase at ${config.supabase.url}`);
 });
 
 export { io };

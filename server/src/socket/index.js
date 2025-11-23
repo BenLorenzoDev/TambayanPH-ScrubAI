@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import config from '../config/index.js';
-import User from '../models/User.js';
+import { supabase } from '../config/supabase.js';
 import logger from '../utils/logger.js';
 
 // Store connected users
@@ -16,13 +16,24 @@ export const initializeSocket = (io) => {
       }
 
       const decoded = jwt.verify(token, config.jwt.secret);
-      const user = await User.findById(decoded.id).select('-password');
 
-      if (!user) {
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name, role')
+        .eq('id', decoded.id)
+        .single();
+
+      if (error || !user) {
         return next(new Error('User not found'));
       }
 
-      socket.user = user;
+      socket.user = {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        role: user.role,
+      };
       next();
     } catch (error) {
       next(new Error('Authentication error'));
@@ -30,7 +41,7 @@ export const initializeSocket = (io) => {
   });
 
   io.on('connection', (socket) => {
-    const userId = socket.user._id.toString();
+    const userId = socket.user.id;
     logger.info(`User connected: ${socket.user.email}`);
 
     // Store connection
@@ -51,7 +62,11 @@ export const initializeSocket = (io) => {
     // Handle agent status change
     socket.on('agent:setStatus', async (status) => {
       try {
-        await User.findByIdAndUpdate(userId, { status });
+        await supabase
+          .from('users')
+          .update({ status })
+          .eq('id', userId);
+
         io.emit('agent:statusChanged', { agentId: userId, status });
         logger.info(`Agent ${socket.user.email} status changed to ${status}`);
       } catch (error) {
@@ -74,7 +89,7 @@ export const initializeSocket = (io) => {
 
     // Handle supervisor listening to call
     socket.on('call:listen', (data) => {
-      const { callId, agentId } = data;
+      const { callId } = data;
       socket.join(`call:${callId}`);
       logger.info(`Supervisor ${socket.user.email} listening to call ${callId}`);
     });
@@ -101,7 +116,11 @@ export const initializeSocket = (io) => {
       connectedUsers.delete(userId);
 
       // Set user status to offline
-      await User.findByIdAndUpdate(userId, { status: 'offline' });
+      await supabase
+        .from('users')
+        .update({ status: 'offline' })
+        .eq('id', userId);
+
       io.emit('agent:statusChanged', { agentId: userId, status: 'offline' });
 
       logger.info(`User disconnected: ${socket.user.email}`);

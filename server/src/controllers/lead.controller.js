@@ -1,30 +1,61 @@
 import { validationResult } from 'express-validator';
-import Lead from '../models/Lead.js';
-import Campaign from '../models/Campaign.js';
+import { supabase } from '../config/supabase.js';
 
 export const getLeads = async (req, res, next) => {
   try {
     const { campaign, status, page = 1, limit = 50 } = req.query;
-    const filter = {};
+    const offset = (page - 1) * limit;
 
-    if (campaign) filter.campaign = campaign;
-    if (status) filter.status = status;
+    let query = supabase
+      .from('leads')
+      .select(`
+        id, phone, alt_phone, first_name, last_name, email, address,
+        custom_fields, status, priority, attempts, last_attempt,
+        next_callback, last_disposition, notes, created_at,
+        campaign_id, assigned_agent,
+        campaigns (name),
+        users!leads_assigned_agent_fkey (first_name, last_name)
+      `, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + parseInt(limit) - 1);
 
-    const leads = await Lead.find(filter)
-      .populate('campaign', 'name')
-      .populate('assignedAgent', 'firstName lastName')
-      .sort('-createdAt')
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+    if (campaign) query = query.eq('campaign_id', campaign);
+    if (status) query = query.eq('status', status);
 
-    const total = await Lead.countDocuments(filter);
+    const { data: leads, error, count } = await query;
+
+    if (error) throw error;
+
+    const formattedLeads = leads.map(lead => ({
+      _id: lead.id,
+      phone: lead.phone,
+      altPhone: lead.alt_phone,
+      firstName: lead.first_name,
+      lastName: lead.last_name,
+      email: lead.email,
+      address: lead.address,
+      customFields: lead.custom_fields,
+      status: lead.status,
+      priority: lead.priority,
+      attempts: lead.attempts,
+      lastAttempt: lead.last_attempt,
+      nextCallback: lead.next_callback,
+      lastDisposition: lead.last_disposition,
+      notes: lead.notes,
+      createdAt: lead.created_at,
+      campaign: lead.campaigns ? { name: lead.campaigns.name } : null,
+      assignedAgent: lead.users ? {
+        firstName: lead.users.first_name,
+        lastName: lead.users.last_name,
+      } : null,
+    }));
 
     res.json({
       success: true,
-      count: leads.length,
-      total,
-      pages: Math.ceil(total / limit),
-      data: leads,
+      count: formattedLeads.length,
+      total: count,
+      pages: Math.ceil(count / limit),
+      data: formattedLeads,
     });
   } catch (error) {
     next(error);
@@ -33,19 +64,50 @@ export const getLeads = async (req, res, next) => {
 
 export const getLead = async (req, res, next) => {
   try {
-    const lead = await Lead.findById(req.params.id)
-      .populate('campaign', 'name script dispositions')
-      .populate('assignedAgent', 'firstName lastName')
-      .populate('notes.createdBy', 'firstName lastName');
+    const { data: lead, error } = await supabase
+      .from('leads')
+      .select(`
+        *,
+        campaigns (name, script, dispositions),
+        users!leads_assigned_agent_fkey (first_name, last_name)
+      `)
+      .eq('id', req.params.id)
+      .single();
 
-    if (!lead) {
+    if (error || !lead) {
       res.status(404);
       throw new Error('Lead not found');
     }
 
     res.json({
       success: true,
-      data: lead,
+      data: {
+        _id: lead.id,
+        phone: lead.phone,
+        altPhone: lead.alt_phone,
+        firstName: lead.first_name,
+        lastName: lead.last_name,
+        email: lead.email,
+        address: lead.address,
+        customFields: lead.custom_fields,
+        status: lead.status,
+        priority: lead.priority,
+        attempts: lead.attempts,
+        lastAttempt: lead.last_attempt,
+        nextCallback: lead.next_callback,
+        lastDisposition: lead.last_disposition,
+        notes: lead.notes,
+        createdAt: lead.created_at,
+        campaign: lead.campaigns ? {
+          name: lead.campaigns.name,
+          script: lead.campaigns.script,
+          dispositions: lead.campaigns.dispositions,
+        } : null,
+        assignedAgent: lead.users ? {
+          firstName: lead.users.first_name,
+          lastName: lead.users.last_name,
+        } : null,
+      },
     });
   } catch (error) {
     next(error);
@@ -60,16 +122,35 @@ export const createLead = async (req, res, next) => {
       throw new Error(errors.array()[0].msg);
     }
 
-    const lead = await Lead.create(req.body);
+    const { phone, altPhone, firstName, lastName, email, address, customFields, campaign, priority } = req.body;
 
-    // Update campaign stats
-    await Campaign.findByIdAndUpdate(req.body.campaign, {
-      $inc: { 'stats.totalLeads': 1, 'stats.pending': 1 },
-    });
+    const { data: lead, error } = await supabase
+      .from('leads')
+      .insert({
+        phone,
+        alt_phone: altPhone,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        address,
+        custom_fields: customFields,
+        campaign_id: campaign,
+        priority: priority || 0,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
 
     res.status(201).json({
       success: true,
-      data: lead,
+      data: {
+        _id: lead.id,
+        phone: lead.phone,
+        firstName: lead.first_name,
+        lastName: lead.last_name,
+        status: lead.status,
+      },
     });
   } catch (error) {
     next(error);
@@ -78,20 +159,37 @@ export const createLead = async (req, res, next) => {
 
 export const updateLead = async (req, res, next) => {
   try {
-    const lead = await Lead.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const updateData = {};
+    const { phone, altPhone, firstName, lastName, email, address, customFields, status, priority, nextCallback, lastDisposition } = req.body;
 
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
+    if (phone) updateData.phone = phone;
+    if (altPhone !== undefined) updateData.alt_phone = altPhone;
+    if (firstName) updateData.first_name = firstName;
+    if (lastName) updateData.last_name = lastName;
+    if (email !== undefined) updateData.email = email;
+    if (address) updateData.address = address;
+    if (customFields) updateData.custom_fields = customFields;
+    if (status) updateData.status = status;
+    if (priority !== undefined) updateData.priority = priority;
+    if (nextCallback) updateData.next_callback = nextCallback;
+    if (lastDisposition) updateData.last_disposition = lastDisposition;
+
+    const { data: lead, error } = await supabase
+      .from('leads')
+      .update(updateData)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      data: lead,
+      data: {
+        _id: lead.id,
+        phone: lead.phone,
+        status: lead.status,
+      },
     });
   } catch (error) {
     next(error);
@@ -100,12 +198,12 @@ export const updateLead = async (req, res, next) => {
 
 export const deleteLead = async (req, res, next) => {
   try {
-    const lead = await Lead.findByIdAndDelete(req.params.id);
+    const { error } = await supabase
+      .from('leads')
+      .delete()
+      .eq('id', req.params.id);
 
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
+    if (error) throw error;
 
     res.json({
       success: true,
@@ -119,41 +217,55 @@ export const deleteLead = async (req, res, next) => {
 export const getNextLead = async (req, res, next) => {
   try {
     const { campaignId } = req.params;
-    const agentId = req.user._id;
+    const agentId = req.user.id;
 
-    // Find next available lead for the agent
-    // Priority: callbacks due > high priority > oldest
-    const lead = await Lead.findOneAndUpdate(
-      {
-        campaign: campaignId,
-        status: { $in: ['new', 'callback'] },
-        $or: [
-          { assignedAgent: agentId },
-          { assignedAgent: null },
-        ],
-        $or: [
-          { nextCallback: { $lte: new Date() } },
-          { nextCallback: null },
-        ],
-      },
-      {
-        assignedAgent: agentId,
-        status: 'contacted',
-      },
-      {
-        new: true,
-        sort: { nextCallback: 1, priority: -1, createdAt: 1 },
-      }
-    ).populate('campaign', 'name script dispositions');
+    // Find next available lead
+    const { data: lead, error } = await supabase
+      .from('leads')
+      .select(`
+        *,
+        campaigns (name, script, dispositions)
+      `)
+      .eq('campaign_id', campaignId)
+      .in('status', ['new', 'callback'])
+      .or(`assigned_agent.is.null,assigned_agent.eq.${agentId}`)
+      .order('next_callback', { ascending: true, nullsFirst: false })
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
 
-    if (!lead) {
+    if (error || !lead) {
       res.status(404);
       throw new Error('No leads available');
     }
 
+    // Update lead
+    await supabase
+      .from('leads')
+      .update({
+        assigned_agent: agentId,
+        status: 'contacted',
+      })
+      .eq('id', lead.id);
+
     res.json({
       success: true,
-      data: lead,
+      data: {
+        _id: lead.id,
+        phone: lead.phone,
+        altPhone: lead.alt_phone,
+        firstName: lead.first_name,
+        lastName: lead.last_name,
+        email: lead.email,
+        status: 'contacted',
+        attempts: lead.attempts,
+        campaign: lead.campaigns ? {
+          name: lead.campaigns.name,
+          script: lead.campaigns.script,
+          dispositions: lead.campaigns.dispositions,
+        } : null,
+      },
     });
   } catch (error) {
     next(error);
@@ -164,27 +276,37 @@ export const addNote = async (req, res, next) => {
   try {
     const { text } = req.body;
 
-    const lead = await Lead.findByIdAndUpdate(
-      req.params.id,
-      {
-        $push: {
-          notes: {
-            text,
-            createdBy: req.user._id,
-          },
-        },
-      },
-      { new: true }
-    ).populate('notes.createdBy', 'firstName lastName');
+    // Get current notes
+    const { data: lead, error: fetchError } = await supabase
+      .from('leads')
+      .select('notes')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
+    if (fetchError) throw fetchError;
+
+    const notes = lead.notes || [];
+    notes.push({
+      text,
+      createdBy: req.user.id,
+      createdAt: new Date().toISOString(),
+    });
+
+    const { data: updatedLead, error } = await supabase
+      .from('leads')
+      .update({ notes })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      data: lead,
+      data: {
+        _id: updatedLead.id,
+        notes: updatedLead.notes,
+      },
     });
   } catch (error) {
     next(error);

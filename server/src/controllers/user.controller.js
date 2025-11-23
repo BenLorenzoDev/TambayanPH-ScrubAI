@@ -1,21 +1,39 @@
-import User from '../models/User.js';
-import Call from '../models/Call.js';
+import { supabase } from '../config/supabase.js';
 
 export const getUsers = async (req, res, next) => {
   try {
     const { role, status, team } = req.query;
-    const filter = {};
 
-    if (role) filter.role = role;
-    if (status) filter.status = status;
-    if (team) filter.team = team;
+    let query = supabase
+      .from('users')
+      .select('id, email, first_name, last_name, role, status, team, extension, skills, is_active, created_at');
 
-    const users = await User.find(filter).select('-password');
+    if (role) query = query.eq('role', role);
+    if (status) query = query.eq('status', status);
+    if (team) query = query.eq('team', team);
+
+    const { data: users, error } = await query;
+
+    if (error) throw error;
+
+    const formattedUsers = users.map(user => ({
+      _id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      role: user.role,
+      status: user.status,
+      team: user.team,
+      extension: user.extension,
+      skills: user.skills,
+      isActive: user.is_active,
+      createdAt: user.created_at,
+    }));
 
     res.json({
       success: true,
-      count: users.length,
-      data: users,
+      count: formattedUsers.length,
+      data: formattedUsers,
     });
   } catch (error) {
     next(error);
@@ -24,16 +42,30 @@ export const getUsers = async (req, res, next) => {
 
 export const getUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, role, status, team, extension, skills')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!user) {
+    if (error || !user) {
       res.status(404);
       throw new Error('User not found');
     }
 
     res.json({
       success: true,
-      data: user,
+      data: {
+        _id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        role: user.role,
+        status: user.status,
+        team: user.team,
+        extension: user.extension,
+        skills: user.skills,
+      },
     });
   } catch (error) {
     next(error);
@@ -42,22 +74,39 @@ export const getUser = async (req, res, next) => {
 
 export const updateUser = async (req, res, next) => {
   try {
-    const { password, ...updateData } = req.body;
+    const { firstName, lastName, role, team, extension, skills, isActive } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    ).select('-password');
+    const updateData = {};
+    if (firstName) updateData.first_name = firstName;
+    if (lastName) updateData.last_name = lastName;
+    if (role) updateData.role = role;
+    if (team !== undefined) updateData.team = team;
+    if (extension !== undefined) updateData.extension = extension;
+    if (skills) updateData.skills = skills;
+    if (isActive !== undefined) updateData.is_active = isActive;
 
-    if (!user) {
-      res.status(404);
-      throw new Error('User not found');
-    }
+    const { data: user, error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', req.params.id)
+      .select('id, email, first_name, last_name, role, status, team, extension, skills')
+      .single();
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      data: user,
+      data: {
+        _id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        role: user.role,
+        status: user.status,
+        team: user.team,
+        extension: user.extension,
+        skills: user.skills,
+      },
     });
   } catch (error) {
     next(error);
@@ -66,16 +115,12 @@ export const updateUser = async (req, res, next) => {
 
 export const deleteUser = async (req, res, next) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
+    const { error } = await supabase
+      .from('users')
+      .update({ is_active: false })
+      .eq('id', req.params.id);
 
-    if (!user) {
-      res.status(404);
-      throw new Error('User not found');
-    }
+    if (error) throw error;
 
     res.json({
       success: true,
@@ -92,48 +137,42 @@ export const getAgentStats = async (req, res, next) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [todayStats, totalStats] = await Promise.all([
-      // Today's stats
-      Call.aggregate([
-        {
-          $match: {
-            agent: agentId,
-            createdAt: { $gte: today },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            totalCalls: { $sum: 1 },
-            totalDuration: { $sum: '$duration' },
-            totalTalkTime: { $sum: '$talkTime' },
-            answered: {
-              $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
-            },
-          },
-        },
-      ]),
-      // All time stats
-      Call.aggregate([
-        {
-          $match: { agent: agentId },
-        },
-        {
-          $group: {
-            _id: null,
-            totalCalls: { $sum: 1 },
-            totalDuration: { $sum: '$duration' },
-            totalTalkTime: { $sum: '$talkTime' },
-          },
-        },
-      ]),
-    ]);
+    // Get today's calls
+    const { data: todayCalls, error: todayError } = await supabase
+      .from('calls')
+      .select('duration, talk_time, status')
+      .eq('agent_id', agentId)
+      .gte('created_at', today.toISOString());
+
+    if (todayError) throw todayError;
+
+    // Get all-time calls
+    const { data: allCalls, error: allError } = await supabase
+      .from('calls')
+      .select('duration, talk_time')
+      .eq('agent_id', agentId);
+
+    if (allError) throw allError;
+
+    // Calculate stats
+    const todayStats = {
+      totalCalls: todayCalls.length,
+      totalDuration: todayCalls.reduce((sum, call) => sum + (call.duration || 0), 0),
+      totalTalkTime: todayCalls.reduce((sum, call) => sum + (call.talk_time || 0), 0),
+      answered: todayCalls.filter(call => call.status === 'completed').length,
+    };
+
+    const totalStats = {
+      totalCalls: allCalls.length,
+      totalDuration: allCalls.reduce((sum, call) => sum + (call.duration || 0), 0),
+      totalTalkTime: allCalls.reduce((sum, call) => sum + (call.talk_time || 0), 0),
+    };
 
     res.json({
       success: true,
       data: {
-        today: todayStats[0] || { totalCalls: 0, totalDuration: 0, totalTalkTime: 0, answered: 0 },
-        total: totalStats[0] || { totalCalls: 0, totalDuration: 0, totalTalkTime: 0 },
+        today: todayStats,
+        total: totalStats,
       },
     });
   } catch (error) {
