@@ -188,8 +188,9 @@ const Dialer = () => {
 
       setCurrentCall(response.data.data);
       setIsOnCall(true);
-      setCallStatus('initiated');
+      setCallStatus('in-progress');
       setCallDuration(0);
+      setShowControls(true);
       toast.success('Call initiated with AI assistant');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to initiate call');
