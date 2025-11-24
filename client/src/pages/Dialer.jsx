@@ -362,7 +362,7 @@ const Dialer = () => {
     }
 
     try {
-      await api.patch(`/calls/${currentCall.call.id}`, {
+      await api.patch(`/calls/${currentCall.call.id}/disposition`, {
         disposition,
         notes: transcript.map(t => `${t.role}: ${t.content}`).join('\n'),
       });
