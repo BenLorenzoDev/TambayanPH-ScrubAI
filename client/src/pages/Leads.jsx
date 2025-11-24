@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
-import { Upload, Search, Phone, Download, Filter, X } from 'lucide-react';
+import { Upload, Search, Phone, Download, Filter, X, RotateCcw, Trash2, MoreVertical } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ImportModal from '../components/leads/ImportModal';
 
@@ -13,6 +13,8 @@ const Leads = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [campaignFilter, setCampaignFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedLeads, setSelectedLeads] = useState([]);
+  const [showActions, setShowActions] = useState(null);
 
   const statusOptions = [
     { value: '', label: 'All Statuses' },
@@ -46,6 +48,80 @@ const Leads = () => {
 
   const handleImportSuccess = () => {
     fetchData();
+  };
+
+  const resetLeadStatus = async (leadId) => {
+    try {
+      await api.patch(`/leads/${leadId}`, { status: 'new' });
+      toast.success('Lead status reset to new');
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to reset lead status');
+    }
+    setShowActions(null);
+  };
+
+  const deleteLead = async (leadId) => {
+    if (!window.confirm('Are you sure you want to delete this lead?')) return;
+
+    try {
+      await api.delete(`/leads/${leadId}`);
+      toast.success('Lead deleted');
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to delete lead');
+    }
+    setShowActions(null);
+  };
+
+  const deleteSelectedLeads = async () => {
+    if (selectedLeads.length === 0) {
+      toast.error('No leads selected');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete ${selectedLeads.length} lead(s)?`)) return;
+
+    try {
+      await Promise.all(selectedLeads.map(id => api.delete(`/leads/${id}`)));
+      toast.success(`Deleted ${selectedLeads.length} lead(s)`);
+      setSelectedLeads([]);
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to delete some leads');
+    }
+  };
+
+  const resetSelectedLeads = async () => {
+    if (selectedLeads.length === 0) {
+      toast.error('No leads selected');
+      return;
+    }
+
+    try {
+      await Promise.all(selectedLeads.map(id => api.patch(`/leads/${id}`, { status: 'new' })));
+      toast.success(`Reset ${selectedLeads.length} lead(s) to new`);
+      setSelectedLeads([]);
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to reset some leads');
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedLeads.length === filteredLeads.length) {
+      setSelectedLeads([]);
+    } else {
+      setSelectedLeads(filteredLeads.map(lead => lead._id));
+    }
+  };
+
+  const toggleSelectLead = (leadId) => {
+    setSelectedLeads(prev =>
+      prev.includes(leadId)
+        ? prev.filter(id => id !== leadId)
+        : [...prev, leadId]
+    );
   };
 
   const downloadTemplate = () => {
@@ -221,10 +297,31 @@ const Leads = () => {
           )}
         </div>
 
-        {/* Results Count */}
-        <div className="mb-3 text-sm text-gray-500">
-          Showing {filteredLeads.length} of {leads.length} leads
-          {hasActiveFilters && ' (filtered)'}
+        {/* Results Count and Bulk Actions */}
+        <div className="mb-3 flex justify-between items-center">
+          <div className="text-sm text-gray-500">
+            Showing {filteredLeads.length} of {leads.length} leads
+            {hasActiveFilters && ' (filtered)'}
+            {selectedLeads.length > 0 && ` • ${selectedLeads.length} selected`}
+          </div>
+          {selectedLeads.length > 0 && (
+            <div className="flex space-x-2">
+              <button
+                onClick={resetSelectedLeads}
+                className="btn btn-secondary btn-sm flex items-center"
+              >
+                <RotateCcw className="h-4 w-4 mr-1" />
+                Reset to New
+              </button>
+              <button
+                onClick={deleteSelectedLeads}
+                className="btn btn-danger btn-sm flex items-center"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </button>
+            </div>
+          )}
         </div>
 
         {filteredLeads.length === 0 ? (
@@ -236,6 +333,14 @@ const Leads = () => {
             <table className="w-full">
               <thead>
                 <tr className="text-left text-sm text-gray-500 border-b">
+                  <th className="pb-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedLeads.length === filteredLeads.length && filteredLeads.length > 0}
+                      onChange={toggleSelectAll}
+                      className="rounded border-gray-300"
+                    />
+                  </th>
                   <th className="pb-3">Name</th>
                   <th className="pb-3">Phone</th>
                   <th className="pb-3">Email</th>
@@ -247,7 +352,15 @@ const Leads = () => {
               </thead>
               <tbody>
                 {filteredLeads.map((lead) => (
-                  <tr key={lead._id} className="border-b last:border-0">
+                  <tr key={lead._id} className="border-b last:border-0 hover:bg-gray-50">
+                    <td className="py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedLeads.includes(lead._id)}
+                        onChange={() => toggleSelectLead(lead._id)}
+                        className="rounded border-gray-300"
+                      />
+                    </td>
                     <td className="py-3">
                       {lead.firstName} {lead.lastName}
                     </td>
@@ -261,12 +374,32 @@ const Leads = () => {
                     </td>
                     <td className="py-3">{lead.attempts}</td>
                     <td className="py-3">
-                      <button
-                        className="p-1 hover:bg-gray-100 rounded"
-                        title="Call"
-                      >
-                        <Phone className="h-4 w-4 text-green-600" />
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowActions(showActions === lead._id ? null : lead._id)}
+                          className="p-1 hover:bg-gray-100 rounded"
+                        >
+                          <MoreVertical className="h-4 w-4 text-gray-500" />
+                        </button>
+                        {showActions === lead._id && (
+                          <div className="absolute right-0 mt-1 w-40 bg-white rounded-md shadow-lg border z-10">
+                            <button
+                              onClick={() => resetLeadStatus(lead._id)}
+                              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center"
+                            >
+                              <RotateCcw className="h-4 w-4 mr-2" />
+                              Reset to New
+                            </button>
+                            <button
+                              onClick={() => deleteLead(lead._id)}
+                              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 text-red-600 flex items-center"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
