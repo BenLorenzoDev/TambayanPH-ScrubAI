@@ -71,65 +71,88 @@ class VapiService {
 
   // Listen to a call (get live audio stream URL)
   async listenToCall(callId) {
-    const call = await this.getCall(callId);
+    try {
+      const call = await this.getCall(callId);
 
-    if (call.status !== 'in-progress') {
-      throw new Error('Call is not in progress');
+      // VAPI provides monitor URL for listening
+      return {
+        callId,
+        monitorUrl: call.monitor?.listenUrl || call.monitor?.controlUrl || null,
+        status: call.status,
+        message: call.monitor?.listenUrl ? 'Listen URL available' : 'Listen URL not available for this call',
+      };
+    } catch (error) {
+      logger.error(`Failed to get listen URL: ${error.message}`);
+      throw new Error('Listen feature not available. Call may not support monitoring.');
     }
-
-    // VAPI provides monitor URL for listening
-    return {
-      callId,
-      monitorUrl: call.monitor?.listenUrl || null,
-      status: call.status,
-    };
   }
 
   // Send a message to the assistant during the call (for whisper/coaching)
-  async sendMessage(callId, message, role = 'system') {
+  async sendMessage(callId, message, type = 'add-message') {
     const payload = {
+      type,
       message: {
-        role,
+        role: 'system',
         content: message,
       },
     };
 
-    logger.info(`Sending ${role} message to call ${callId}`);
-    return this.makeRequest(`/call/${callId}/message`, 'POST', payload);
+    logger.info(`Sending message to call ${callId}: ${message}`);
+    return this.makeRequest(`/call/${callId}`, 'PATCH', payload);
   }
 
-  // Whisper to the AI assistant (only assistant hears)
+  // Whisper to the AI assistant (only assistant hears - system message)
   async whisper(callId, message) {
-    return this.sendMessage(callId, message, 'system');
+    try {
+      const payload = {
+        type: 'add-message',
+        message: {
+          role: 'system',
+          content: message,
+        },
+      };
+
+      logger.info(`Whisper to call ${callId}: ${message}`);
+      return this.makeRequest(`/call/${callId}`, 'PATCH', payload);
+    } catch (error) {
+      logger.error(`Whisper failed: ${error.message}`);
+      throw new Error('Failed to send whisper. The call may have ended.');
+    }
   }
 
-  // Barge into the call (inject audio/message that customer hears)
+  // Barge into the call - make AI say something to the customer
   async barge(callId, message) {
-    // For barge-in, we need to use add-message with user role
-    // This will make the assistant respond as if the user said something
-    const payload = {
-      type: 'add-message',
-      message: {
-        role: 'user',
-        content: message,
-      },
-    };
+    try {
+      const payload = {
+        type: 'say',
+        message: message,
+      };
 
-    logger.info(`Barging into call ${callId}`);
-    return this.makeRequest(`/call/${callId}/message`, 'POST', payload);
+      logger.info(`Barge into call ${callId}: ${message}`);
+      return this.makeRequest(`/call/${callId}`, 'PATCH', payload);
+    } catch (error) {
+      logger.error(`Barge failed: ${error.message}`);
+      throw new Error('Failed to barge into call. The call may have ended.');
+    }
   }
 
   // Transfer call to a human agent
   async transferCall(callId, destination) {
-    const payload = {
-      destination: {
-        type: 'number',
-        number: destination,
-      },
-    };
+    try {
+      const payload = {
+        type: 'transfer',
+        destination: {
+          type: 'number',
+          number: destination,
+        },
+      };
 
-    logger.info(`Transferring call ${callId} to ${destination}`);
-    return this.makeRequest(`/call/${callId}/transfer`, 'POST', payload);
+      logger.info(`Transferring call ${callId} to ${destination}`);
+      return this.makeRequest(`/call/${callId}`, 'PATCH', payload);
+    } catch (error) {
+      logger.error(`Transfer failed: ${error.message}`);
+      throw new Error('Failed to transfer call. The call may have ended.');
+    }
   }
 
   // Get call transcript
