@@ -45,6 +45,7 @@ export const getLeads = async (req, res, next) => {
       lastDisposition: lead.last_disposition,
       notes: lead.notes,
       createdAt: lead.created_at,
+      campaignId: lead.campaign_id,
       campaign: lead.campaigns ? { name: lead.campaigns.name } : null,
       assignedAgent: lead.users ? {
         firstName: lead.users.first_name,
