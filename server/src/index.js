@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import config from './config/index.js';
 import logger from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/error.middleware.js';
@@ -13,6 +15,9 @@ import callRoutes from './routes/call.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import vapiRoutes from './routes/vapi.routes.js';
 import { initializeSocket } from './socket/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
@@ -51,8 +56,24 @@ app.use('/api/calls', callRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/vapi', vapiRoutes);
 
-// Error handling
-app.use(notFound);
+// Serve static files from client build in production
+if (config.env === 'production') {
+  const clientBuildPath = path.join(__dirname, '../../client/dist');
+  app.use(express.static(clientBuildPath));
+
+  // Handle client-side routing - serve index.html for all non-API routes
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
+
+// Error handling (only for API routes in production)
+if (config.env !== 'production') {
+  app.use(notFound);
+}
 app.use(errorHandler);
 
 // Initialize Socket handlers

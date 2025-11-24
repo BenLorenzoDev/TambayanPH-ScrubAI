@@ -2,8 +2,8 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "npx serve -s dist -l $PORT"
-healthcheckPath = "/"
-healthcheckTimeout = 300
+startCommand = "npm start"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
