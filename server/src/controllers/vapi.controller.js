@@ -62,7 +62,7 @@ export const createVapiCall = async (req, res, next) => {
         lead_id: leadId || null,
         campaign_id: campaignId,
         agent_id: agentId,
-        phone_number: phoneToCall,
+        phone: phoneToCall,
         direction: 'outbound',
         status: 'initiated',
         vapi_call_id: vapiCall.id,
