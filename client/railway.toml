@@ -2,11 +2,8 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "npx serve dist -s -l $PORT"
+startCommand = "npx serve -s dist -l $PORT"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-
-[env]
-NODE_ENV = "production"
