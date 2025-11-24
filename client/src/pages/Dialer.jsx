@@ -317,35 +317,9 @@ const Dialer = () => {
     }
 
     try {
-      // Create audio context
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 16000,
-      });
-
-      // Create a simple audio processor using ScriptProcessorNode (more compatible)
-      const bufferSize = 4096;
-      audioNodeRef.current = audioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
-
-      let audioBuffer = new Float32Array(0);
-
-      audioNodeRef.current.onaudioprocess = (e) => {
-        const outputData = e.outputBuffer.getChannelData(0);
-        const samplesToOutput = Math.min(audioBuffer.length, outputData.length);
-
-        for (let i = 0; i < samplesToOutput; i++) {
-          outputData[i] = audioBuffer[i];
-        }
-
-        // Fill rest with silence
-        for (let i = samplesToOutput; i < outputData.length; i++) {
-          outputData[i] = 0;
-        }
-
-        // Remove used samples
-        audioBuffer = audioBuffer.slice(samplesToOutput);
-      };
-
-      audioNodeRef.current.connect(audioContextRef.current.destination);
+      // Create audio context at device's native sample rate for better performance
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      const deviceSampleRate = audioContextRef.current.sampleRate;
 
       // Connect to WebSocket
       wsRef.current = new WebSocket(listenUrl);
@@ -357,20 +331,41 @@ const Dialer = () => {
       };
 
       wsRef.current.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) {
+        if (event.data instanceof ArrayBuffer && audioContextRef.current) {
           const int16Array = new Int16Array(event.data);
-          const float32Array = new Float32Array(int16Array.length);
 
           // Convert 16-bit PCM to Float32 [-1.0, 1.0]
+          const float32Array = new Float32Array(int16Array.length);
           for (let i = 0; i < int16Array.length; i++) {
             float32Array[i] = int16Array[i] / 32768.0;
           }
 
-          // Append to buffer
-          const newBuffer = new Float32Array(audioBuffer.length + float32Array.length);
-          newBuffer.set(audioBuffer);
-          newBuffer.set(float32Array, audioBuffer.length);
-          audioBuffer = newBuffer;
+          // Resample from 16kHz to device sample rate if needed
+          const inputSampleRate = 16000;
+          let audioData = float32Array;
+
+          if (deviceSampleRate !== inputSampleRate) {
+            const ratio = deviceSampleRate / inputSampleRate;
+            const newLength = Math.round(float32Array.length * ratio);
+            audioData = new Float32Array(newLength);
+
+            for (let i = 0; i < newLength; i++) {
+              const srcIndex = i / ratio;
+              const srcIndexFloor = Math.floor(srcIndex);
+              const srcIndexCeil = Math.min(srcIndexFloor + 1, float32Array.length - 1);
+              const t = srcIndex - srcIndexFloor;
+              audioData[i] = float32Array[srcIndexFloor] * (1 - t) + float32Array[srcIndexCeil] * t;
+            }
+          }
+
+          // Create audio buffer and play immediately
+          const audioBuffer = audioContextRef.current.createBuffer(1, audioData.length, deviceSampleRate);
+          audioBuffer.getChannelData(0).set(audioData);
+
+          const source = audioContextRef.current.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContextRef.current.destination);
+          source.start();
         }
       };
 
