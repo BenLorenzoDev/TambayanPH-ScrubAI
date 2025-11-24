@@ -904,7 +904,7 @@ const Dialer = () => {
               <div>
                 <span className="text-sm text-gray-500">Name</span>
                 <p className="font-medium">
-                  {currentLead.first_name} {currentLead.last_name}
+                  {currentLead.firstName || currentLead.first_name || ''} {currentLead.lastName || currentLead.last_name || ''}
                 </p>
               </div>
               <div>
@@ -1056,7 +1056,7 @@ const Dialer = () => {
                 <div className="mb-4 p-3 bg-blue-50 rounded-lg">
                   <p className="text-sm text-gray-600 mb-1">Matched Lead:</p>
                   <p className="font-medium text-gray-900">
-                    {inboundCall.lead.first_name} {inboundCall.lead.last_name}
+                    {inboundCall.lead.firstName || inboundCall.lead.first_name || ''} {inboundCall.lead.lastName || inboundCall.lead.last_name || ''}
                   </p>
                   {inboundCall.lead.campaign && (
                     <p className="text-sm text-gray-500 mt-1">
