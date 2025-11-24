@@ -95,16 +95,31 @@ const Dialer = () => {
     return () => clearInterval(timer);
   }, [isOnCall, callStatus]);
 
-  // Poll for transcript updates during active call
+  // Poll for call status and transcript updates during active call
   useEffect(() => {
     let pollTimer;
     if (isOnCall && currentCall?.call?.id) {
-      const fetchTranscript = async () => {
+      const fetchCallStatus = async () => {
         try {
-          const response = await api.get(`/vapi/call/${currentCall.call.id}/transcript`);
-          if (response.data.data && response.data.data.length > 0) {
+          // Fetch call status to detect if call ended
+          const statusResponse = await api.get(`/vapi/call/${currentCall.call.id}/status`);
+          const callData = statusResponse.data.data;
+
+          // Check if call has ended
+          if (callData.status === 'completed' || callData.status === 'ended' ||
+              callData.vapiDetails?.status === 'ended') {
+            setIsOnCall(false);
+            setCallStatus('ended');
+            setShowControls(false);
+            toast.info('Call ended');
+            return; // Stop polling
+          }
+
+          // Fetch transcript
+          const transcriptResponse = await api.get(`/vapi/call/${currentCall.call.id}/transcript`);
+          if (transcriptResponse.data.data && transcriptResponse.data.data.length > 0) {
             // Format transcript messages
-            const formattedTranscript = response.data.data.map(msg => ({
+            const formattedTranscript = transcriptResponse.data.data.map(msg => ({
               role: msg.role || 'assistant',
               content: msg.content || msg.message || msg.text || '',
             })).filter(msg => msg.content);
@@ -114,15 +129,20 @@ const Dialer = () => {
             }
           }
         } catch (error) {
-          // Silently fail - transcript polling is best effort
+          // If we get an error fetching status, call might have ended
+          if (error.response?.status === 404) {
+            setIsOnCall(false);
+            setCallStatus('ended');
+            setShowControls(false);
+          }
         }
       };
 
-      // Initial fetch after 3 seconds (give call time to start)
-      const initialDelay = setTimeout(fetchTranscript, 3000);
+      // Initial fetch after 2 seconds (give call time to start)
+      const initialDelay = setTimeout(fetchCallStatus, 2000);
 
-      // Poll every 3 seconds
-      pollTimer = setInterval(fetchTranscript, 3000);
+      // Poll every 2 seconds
+      pollTimer = setInterval(fetchCallStatus, 2000);
 
       return () => {
         clearTimeout(initialDelay);
