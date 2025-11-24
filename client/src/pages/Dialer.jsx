@@ -273,7 +273,7 @@ const Dialer = () => {
               >
                 <option value="">Select a campaign</option>
                 {campaigns.map((campaign) => (
-                  <option key={campaign.id} value={campaign.id}>
+                  <option key={campaign._id} value={campaign._id}>
                     {campaign.name}
                   </option>
                 ))}
