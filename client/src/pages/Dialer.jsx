@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import api from '../services/api';
-import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle } from 'lucide-react';
+import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle, Headphones, Mic, Volume2, PhoneForwarded, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Dialer = () => {
@@ -17,6 +17,9 @@ const Dialer = () => {
   const [transcript, setTranscript] = useState([]);
   const [disposition, setDisposition] = useState('');
   const [phoneValidation, setPhoneValidation] = useState({ isValid: false, message: '' });
+  const [whisperMessage, setWhisperMessage] = useState('');
+  const [transferNumber, setTransferNumber] = useState('');
+  const [showControls, setShowControls] = useState(false);
 
   // Validate international phone number (E.164 format)
   const validatePhoneNumber = (phone) => {
@@ -83,7 +86,7 @@ const Dialer = () => {
 
   useEffect(() => {
     let timer;
-    if (isOnCall && callStatus === 'in-progress') {
+    if (isOnCall && (callStatus === 'in-progress' || callStatus === 'initiated' || callStatus === 'ringing')) {
       timer = setInterval(() => {
         setCallDuration((prev) => prev + 1);
       }, 1000);
@@ -96,6 +99,7 @@ const Dialer = () => {
       socket.on('call:connected', (data) => {
         if (currentCall?.vapiCall?.id === data.vapiCallId) {
           setCallStatus('in-progress');
+          setShowControls(true);
           toast.success('Call connected');
         }
       });
@@ -104,13 +108,25 @@ const Dialer = () => {
         if (currentCall?.vapiCall?.id === data.vapiCallId) {
           setIsOnCall(false);
           setCallStatus('ended');
+          setShowControls(false);
           toast.info(`Call ended: ${data.reason || 'completed'}`);
         }
       });
 
       socket.on('call:transcript', (data) => {
         if (currentCall?.vapiCall?.id === data.vapiCallId) {
-          setTranscript(data.transcript);
+          // Handle both array and single message format
+          if (Array.isArray(data.transcript)) {
+            setTranscript(data.transcript);
+          } else if (data.transcript) {
+            setTranscript(prev => [...prev, data.transcript]);
+          }
+        }
+      });
+
+      socket.on('call:speech', (data) => {
+        if (currentCall?.vapiCall?.id === data.vapiCallId) {
+          // Could be used to show speaking indicators
         }
       });
 
@@ -118,6 +134,7 @@ const Dialer = () => {
         socket.off('call:connected');
         socket.off('call:ended');
         socket.off('call:transcript');
+        socket.off('call:speech');
       };
     }
   }, [socket, currentCall]);
@@ -186,9 +203,75 @@ const Dialer = () => {
       await api.post(`/vapi/call/${currentCall.call.id}/end`);
       setIsOnCall(false);
       setCallStatus('ended');
+      setShowControls(false);
       toast.success('Call ended');
     } catch (error) {
       toast.error('Failed to end call');
+    }
+  };
+
+  const listenToCall = async () => {
+    if (!currentCall) return;
+
+    try {
+      const response = await api.post(`/vapi/call/${currentCall.call.id}/listen`);
+      toast.success('Now listening to call');
+      // The listen URL would be in response.data.data
+    } catch (error) {
+      toast.error('Failed to listen to call');
+    }
+  };
+
+  const sendWhisper = async () => {
+    if (!currentCall || !whisperMessage.trim()) {
+      toast.error('Please enter a message');
+      return;
+    }
+
+    try {
+      await api.post(`/vapi/call/${currentCall.call.id}/whisper`, {
+        message: whisperMessage,
+      });
+      toast.success('Whisper sent to AI');
+      setWhisperMessage('');
+    } catch (error) {
+      toast.error('Failed to send whisper');
+    }
+  };
+
+  const sendBarge = async () => {
+    if (!currentCall || !whisperMessage.trim()) {
+      toast.error('Please enter a message');
+      return;
+    }
+
+    try {
+      await api.post(`/vapi/call/${currentCall.call.id}/barge`, {
+        message: whisperMessage,
+      });
+      toast.success('Message sent to both parties');
+      setWhisperMessage('');
+    } catch (error) {
+      toast.error('Failed to barge into call');
+    }
+  };
+
+  const transferCall = async () => {
+    if (!currentCall || !transferNumber.trim()) {
+      toast.error('Please enter a transfer number');
+      return;
+    }
+
+    try {
+      await api.post(`/vapi/call/${currentCall.call.id}/transfer`, {
+        destination: transferNumber,
+      });
+      toast.success('Call transferred');
+      setTransferNumber('');
+      setIsOnCall(false);
+      setCallStatus('transferred');
+    } catch (error) {
+      toast.error('Failed to transfer call');
     }
   };
 
@@ -360,6 +443,73 @@ const Dialer = () => {
                 </button>
               )}
             </div>
+
+            {/* Call Controls */}
+            {showControls && isOnCall && (
+              <div className="space-y-3 pt-4 border-t">
+                <h3 className="text-sm font-medium text-gray-700">Call Controls</h3>
+
+                {/* Listen Button */}
+                <button
+                  onClick={listenToCall}
+                  className="btn btn-secondary w-full flex items-center justify-center"
+                >
+                  <Headphones className="h-4 w-4 mr-2" />
+                  Listen to Call
+                </button>
+
+                {/* Whisper/Barge Input */}
+                <div className="space-y-2">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={whisperMessage}
+                      onChange={(e) => setWhisperMessage(e.target.value)}
+                      placeholder="Message to AI or customer..."
+                      className="input flex-1 text-sm"
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={sendWhisper}
+                      className="btn btn-secondary flex-1 text-xs py-1.5 flex items-center justify-center"
+                      title="Only AI hears this"
+                    >
+                      <Mic className="h-3 w-3 mr-1" />
+                      Whisper
+                    </button>
+                    <button
+                      onClick={sendBarge}
+                      className="btn btn-secondary flex-1 text-xs py-1.5 flex items-center justify-center"
+                      title="Both parties hear this"
+                    >
+                      <Volume2 className="h-3 w-3 mr-1" />
+                      Barge
+                    </button>
+                  </div>
+                </div>
+
+                {/* Transfer */}
+                <div className="space-y-2">
+                  <div className="flex space-x-2">
+                    <input
+                      type="tel"
+                      value={transferNumber}
+                      onChange={(e) => setTransferNumber(e.target.value)}
+                      placeholder="Transfer to number..."
+                      className="input flex-1 text-sm"
+                    />
+                    <button
+                      onClick={transferCall}
+                      className="btn btn-secondary flex items-center"
+                      disabled={!transferNumber}
+                    >
+                      <PhoneForwarded className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Disposition */}
             {callStatus === 'ended' && (
