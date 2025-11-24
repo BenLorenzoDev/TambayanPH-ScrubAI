@@ -100,12 +100,15 @@ export const createVapiCall = async (req, res, next) => {
 
     // Update lead status if we have a lead
     if (lead) {
+      const newAttempts = (lead.attempts || 0) + 1;
+      logger.info(`Incrementing attempts for lead ${leadId}: ${lead.attempts} -> ${newAttempts}`);
+
       await supabase
         .from('leads')
         .update({
           status: 'calling',
           last_called: new Date().toISOString(),
-          attempts: (lead.attempts || 0) + 1,
+          attempts: newAttempts,
         })
         .eq('id', leadId);
     }

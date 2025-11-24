@@ -262,6 +262,8 @@ export const getNextLead = async (req, res, next) => {
       })
       .eq('id', lead.id);
 
+    logger.info(`Fetched lead ${lead.id} - attempts: ${lead.attempts}`);
+
     res.json({
       success: true,
       data: {
@@ -272,7 +274,7 @@ export const getNextLead = async (req, res, next) => {
         lastName: lead.last_name,
         email: lead.email,
         status: lead.status,
-        attempts: lead.attempts,
+        attempts: lead.attempts || 0,
         campaign: lead.campaigns ? {
           name: lead.campaigns.name,
           script: lead.campaigns.script,

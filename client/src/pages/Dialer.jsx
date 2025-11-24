@@ -927,7 +927,7 @@ const Dialer = () => {
               </div>
               <div>
                 <span className="text-sm text-gray-500">Attempts</span>
-                <p className="font-medium">{currentLead.attempts}</p>
+                <p className="font-medium">{currentLead.attempts || 0}</p>
               </div>
 
               {currentLead.campaign?.script && (
