@@ -2,6 +2,7 @@ import { validationResult } from 'express-validator';
 import path from 'path';
 import { supabase } from '../config/supabase.js';
 import { parseCSV, parseExcel, importLeads } from '../services/import.service.js';
+import logger from '../utils/logger.js';
 
 export const getLeads = async (req, res, next) => {
   try {
