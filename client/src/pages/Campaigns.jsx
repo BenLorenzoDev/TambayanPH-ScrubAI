@@ -15,7 +15,7 @@ const Campaigns = () => {
     description: '',
     type: 'outbound',
     dialMode: 'preview',
-    status: 'draft',
+    status: 'active',
     script: '',
     dispositions: ['interested', 'not_interested', 'callback', 'no_answer', 'voicemail', 'wrong_number'],
   });
@@ -54,7 +54,7 @@ const Campaigns = () => {
       description: '',
       type: 'outbound',
       dialMode: 'preview',
-      status: 'draft',
+      status: 'active',
       script: '',
       dispositions: ['interested', 'not_interested', 'callback', 'no_answer', 'voicemail', 'wrong_number'],
     });
