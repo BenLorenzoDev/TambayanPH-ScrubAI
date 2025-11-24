@@ -102,7 +102,7 @@ const Dialer = () => {
       const fetchCallStatus = async () => {
         try {
           // Fetch call status to detect if call ended
-          const statusResponse = await api.get(`/vapi/call/${currentCall.call.id}/status`);
+          const statusResponse = await api.get(`/vapi/call/${currentCall.call.id}`);
           const callData = statusResponse.data.data;
           const vapiStatus = callData.vapiDetails?.status;
           const dbStatus = callData.status;
