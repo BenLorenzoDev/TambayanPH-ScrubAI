@@ -187,22 +187,31 @@ export const updateCampaign = async (req, res, next) => {
 
 export const deleteCampaign = async (req, res, next) => {
   try {
-    // Delete associated leads first
+    const campaignId = req.params.id;
+
+    // Delete associated calls first (due to foreign key constraint)
+    await supabase
+      .from('calls')
+      .delete()
+      .eq('campaign_id', campaignId);
+
+    // Delete associated leads
     await supabase
       .from('leads')
       .delete()
-      .eq('campaign_id', req.params.id);
+      .eq('campaign_id', campaignId);
 
+    // Finally delete the campaign
     const { error } = await supabase
       .from('campaigns')
       .delete()
-      .eq('id', req.params.id);
+      .eq('id', campaignId);
 
     if (error) throw error;
 
     res.json({
       success: true,
-      message: 'Campaign deleted successfully',
+      message: 'Campaign and all associated data deleted successfully',
     });
   } catch (error) {
     next(error);
