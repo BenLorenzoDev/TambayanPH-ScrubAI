@@ -2,6 +2,7 @@ import express from 'express';
 import { body } from 'express-validator';
 import multer from 'multer';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   getLeads,
   getLead,
@@ -14,12 +15,16 @@ import {
 } from '../controllers/lead.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const router = express.Router();
 
-// Configure multer for file uploads
+// Configure multer for file uploads with absolute path
+const uploadsDir = path.join(__dirname, '../../uploads');
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
