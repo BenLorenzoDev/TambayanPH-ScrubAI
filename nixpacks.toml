@@ -2,10 +2,10 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install --workspace=server --include-workspace-root"]
+cmds = ["npm install"]
 
 [phases.build]
-cmds = ["echo 'Skipping client build - backend only'"]
+cmds = ["npm run build --workspace=client", "npm run build --workspace=server --if-present"]
 
 [start]
 cmd = "npm start"
