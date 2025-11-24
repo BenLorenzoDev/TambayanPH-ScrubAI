@@ -317,9 +317,19 @@ const Dialer = () => {
     }
 
     try {
-      // Create audio context at device's native sample rate for better performance
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      const deviceSampleRate = audioContextRef.current.sampleRate;
+      // Create audio context at 16kHz to match VAPI's audio
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 16000,
+      });
+
+      // Load the AudioWorklet processor
+      await audioContextRef.current.audioWorklet.addModule('/audioProcessor.js');
+
+      // Create AudioWorkletNode
+      audioNodeRef.current = new AudioWorkletNode(audioContextRef.current, 'audio-processor', {
+        outputChannelCount: [2],
+      });
+      audioNodeRef.current.connect(audioContextRef.current.destination);
 
       // Connect to WebSocket
       wsRef.current = new WebSocket(listenUrl);
@@ -331,41 +341,17 @@ const Dialer = () => {
       };
 
       wsRef.current.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer && audioContextRef.current) {
+        if (event.data instanceof ArrayBuffer && audioNodeRef.current) {
           const int16Array = new Int16Array(event.data);
+          const float32Array = new Float32Array(int16Array.length);
 
           // Convert 16-bit PCM to Float32 [-1.0, 1.0]
-          const float32Array = new Float32Array(int16Array.length);
           for (let i = 0; i < int16Array.length; i++) {
             float32Array[i] = int16Array[i] / 32768.0;
           }
 
-          // Resample from 16kHz to device sample rate if needed
-          const inputSampleRate = 16000;
-          let audioData = float32Array;
-
-          if (deviceSampleRate !== inputSampleRate) {
-            const ratio = deviceSampleRate / inputSampleRate;
-            const newLength = Math.round(float32Array.length * ratio);
-            audioData = new Float32Array(newLength);
-
-            for (let i = 0; i < newLength; i++) {
-              const srcIndex = i / ratio;
-              const srcIndexFloor = Math.floor(srcIndex);
-              const srcIndexCeil = Math.min(srcIndexFloor + 1, float32Array.length - 1);
-              const t = srcIndex - srcIndexFloor;
-              audioData[i] = float32Array[srcIndexFloor] * (1 - t) + float32Array[srcIndexCeil] * t;
-            }
-          }
-
-          // Create audio buffer and play immediately
-          const audioBuffer = audioContextRef.current.createBuffer(1, audioData.length, deviceSampleRate);
-          audioBuffer.getChannelData(0).set(audioData);
-
-          const source = audioContextRef.current.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(audioContextRef.current.destination);
-          source.start();
+          // Send audio data to AudioWorkletProcessor
+          audioNodeRef.current.port.postMessage({ audioData: float32Array });
         }
       };
 
