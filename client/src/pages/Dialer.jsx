@@ -18,7 +18,7 @@ const Dialer = () => {
   const [disposition, setDisposition] = useState('');
   const [phoneValidation, setPhoneValidation] = useState({ isValid: false, message: '' });
 
-  // Validate Philippine phone number
+  // Validate international phone number (E.164 format)
   const validatePhoneNumber = (phone) => {
     if (!phone) {
       return { isValid: false, message: '' };
@@ -27,31 +27,25 @@ const Dialer = () => {
     // Remove all non-digit characters except +
     const cleaned = phone.replace(/[^\d+]/g, '');
 
-    // Philippine mobile number patterns
-    // +639XXXXXXXXX (E.164 format)
-    // 09XXXXXXXXX (local format)
-    // 9XXXXXXXXX (without leading 0)
+    // E.164 format: + followed by country code and number (7-15 digits total)
+    const e164Pattern = /^\+[1-9]\d{6,14}$/;
 
-    const e164Pattern = /^\+639\d{9}$/;
-    const localPattern = /^09\d{9}$/;
-    const shortPattern = /^9\d{9}$/;
+    // Common patterns without + prefix
+    const usPattern = /^1?\d{10}$/; // US: 10 digits or 1+10 digits
+    const intlPattern = /^\d{7,15}$/; // Generic international
 
     if (e164Pattern.test(cleaned)) {
-      return { isValid: true, message: 'Valid Philippine mobile number' };
-    } else if (localPattern.test(cleaned)) {
-      return { isValid: true, message: 'Valid Philippine mobile number' };
-    } else if (shortPattern.test(cleaned)) {
-      return { isValid: true, message: 'Valid Philippine mobile number' };
-    } else if (cleaned.length < 10) {
+      return { isValid: true, message: 'Valid international number' };
+    } else if (usPattern.test(cleaned)) {
+      return { isValid: true, message: 'Valid US/Canada number' };
+    } else if (intlPattern.test(cleaned)) {
+      return { isValid: true, message: 'Valid phone number' };
+    } else if (cleaned.length < 7) {
       return { isValid: false, message: 'Phone number is too short' };
-    } else if (cleaned.length > 13) {
+    } else if (cleaned.length > 16) {
       return { isValid: false, message: 'Phone number is too long' };
-    } else if (cleaned.startsWith('+63') && cleaned.length !== 13) {
-      return { isValid: false, message: 'Invalid +63 format (should be +639XXXXXXXXX)' };
-    } else if (cleaned.startsWith('09') && cleaned.length !== 11) {
-      return { isValid: false, message: 'Invalid format (should be 09XXXXXXXXX)' };
     } else {
-      return { isValid: false, message: 'Invalid Philippine phone number format' };
+      return { isValid: false, message: 'Invalid phone number format' };
     }
   };
 
@@ -59,14 +53,23 @@ const Dialer = () => {
   const normalizePhoneNumber = (phone) => {
     const cleaned = phone.replace(/[^\d+]/g, '');
 
-    if (cleaned.startsWith('+63')) {
+    // Already in E.164 format
+    if (cleaned.startsWith('+')) {
       return cleaned;
-    } else if (cleaned.startsWith('09')) {
-      return '+63' + cleaned.substring(1);
-    } else if (cleaned.startsWith('9') && cleaned.length === 10) {
-      return '+63' + cleaned;
     }
-    return cleaned;
+
+    // US/Canada: 10 digits -> +1
+    if (cleaned.length === 10) {
+      return '+1' + cleaned;
+    }
+
+    // US/Canada: 11 digits starting with 1
+    if (cleaned.length === 11 && cleaned.startsWith('1')) {
+      return '+' + cleaned;
+    }
+
+    // Default: assume it needs +1 prefix
+    return '+1' + cleaned;
   };
 
   // Update validation when phone number changes

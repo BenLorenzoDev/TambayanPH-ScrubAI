@@ -29,7 +29,7 @@ export const parseExcel = (filePath) => {
   return data;
 };
 
-export const importLeads = async (campaignId, data, fieldMapping) => {
+export const importLeads = async (campaignId, data, fieldMapping, countryCode = '+1') => {
   const leads = [];
   const errors = [];
 
@@ -40,11 +40,11 @@ export const importLeads = async (campaignId, data, fieldMapping) => {
       // Map fields from CSV/Excel to our schema
       const lead = {
         campaign_id: campaignId,
-        phone: normalizePhone(row[fieldMapping.phone] || row.phone || row.Phone || row.PHONE),
+        phone: normalizePhone(row[fieldMapping.phone] || row.phone || row.Phone || row.PHONE, countryCode),
         first_name: row[fieldMapping.firstName] || row.firstName || row.first_name || row.FirstName || row['First Name'] || '',
         last_name: row[fieldMapping.lastName] || row.lastName || row.last_name || row.LastName || row['Last Name'] || '',
         email: row[fieldMapping.email] || row.email || row.Email || row.EMAIL || null,
-        alt_phone: row[fieldMapping.altPhone] || row.altPhone || row.alt_phone || row['Alt Phone'] || null,
+        alt_phone: normalizePhone(row[fieldMapping.altPhone] || row.altPhone || row.alt_phone || row['Alt Phone'] || null, countryCode),
         address: {
           street: row[fieldMapping.street] || row.street || row.Street || row.address || '',
           city: row[fieldMapping.city] || row.city || row.City || '',
@@ -102,20 +102,73 @@ export const importLeads = async (campaignId, data, fieldMapping) => {
   };
 };
 
-const normalizePhone = (phone) => {
+const normalizePhone = (phone, countryCode = '+1') => {
   if (!phone) return null;
 
   // Convert to string and remove all non-numeric characters except +
   let normalized = String(phone).replace(/[^\d+]/g, '');
 
-  // Handle Philippine numbers
-  if (normalized.startsWith('0')) {
-    normalized = '+63' + normalized.substring(1);
-  } else if (normalized.startsWith('63') && !normalized.startsWith('+')) {
-    normalized = '+' + normalized;
-  } else if (!normalized.startsWith('+') && normalized.length === 10) {
-    normalized = '+63' + normalized;
+  // If already has a country code, keep it
+  if (normalized.startsWith('+')) {
+    return normalized;
   }
 
-  return normalized;
+  // Handle based on country code
+  const codeDigits = countryCode.replace('+', '');
+
+  // If starts with the country code digits (without +), add +
+  if (normalized.startsWith(codeDigits)) {
+    return '+' + normalized;
+  }
+
+  // Handle country-specific formats
+  switch (countryCode) {
+    case '+1': // US/Canada
+      // Remove leading 1 if present, then add +1
+      if (normalized.startsWith('1') && normalized.length === 11) {
+        return '+' + normalized;
+      }
+      // 10 digit US number
+      if (normalized.length === 10) {
+        return '+1' + normalized;
+      }
+      break;
+
+    case '+63': // Philippines
+      // Remove leading 0, add +63
+      if (normalized.startsWith('0')) {
+        return '+63' + normalized.substring(1);
+      }
+      if (normalized.length === 10) {
+        return '+63' + normalized;
+      }
+      break;
+
+    case '+61': // Australia
+      // Remove leading 0, add +61
+      if (normalized.startsWith('0')) {
+        return '+61' + normalized.substring(1);
+      }
+      if (normalized.length === 9) {
+        return '+61' + normalized;
+      }
+      break;
+
+    case '+44': // UK
+      // Remove leading 0, add +44
+      if (normalized.startsWith('0')) {
+        return '+44' + normalized.substring(1);
+      }
+      if (normalized.length === 10) {
+        return '+44' + normalized;
+      }
+      break;
+
+    default:
+      // For other countries, just prepend the country code
+      break;
+  }
+
+  // Default: prepend country code
+  return countryCode + normalized;
 };

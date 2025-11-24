@@ -333,7 +333,7 @@ export const importLeadsFromFile = async (req, res, next) => {
       throw new Error('No file uploaded');
     }
 
-    const { campaignId, fieldMapping } = req.body;
+    const { campaignId, fieldMapping, countryCode } = req.body;
 
     if (!campaignId) {
       res.status(400);
@@ -358,7 +358,7 @@ export const importLeadsFromFile = async (req, res, next) => {
     // Parse field mapping if provided as string
     const mapping = fieldMapping ? JSON.parse(fieldMapping) : {};
 
-    const result = await importLeads(campaignId, data, mapping);
+    const result = await importLeads(campaignId, data, mapping, countryCode || '+1');
 
     res.json({
       success: true,

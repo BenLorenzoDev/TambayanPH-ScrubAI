@@ -12,7 +12,21 @@ const ImportModal = ({ isOpen, onClose, campaigns, onSuccess }) => {
   const [fileColumns, setFileColumns] = useState([]);
   const [fieldMapping, setFieldMapping] = useState({});
   const [previewData, setPreviewData] = useState([]);
+  const [countryCode, setCountryCode] = useState('+1'); // Default to US
   const fileInputRef = useRef(null);
+
+  const countryCodes = [
+    { code: '+1', label: 'US/Canada (+1)', country: 'US' },
+    { code: '+63', label: 'Philippines (+63)', country: 'PH' },
+    { code: '+61', label: 'Australia (+61)', country: 'AU' },
+    { code: '+44', label: 'United Kingdom (+44)', country: 'UK' },
+    { code: '+91', label: 'India (+91)', country: 'IN' },
+    { code: '+65', label: 'Singapore (+65)', country: 'SG' },
+    { code: '+81', label: 'Japan (+81)', country: 'JP' },
+    { code: '+49', label: 'Germany (+49)', country: 'DE' },
+    { code: '+33', label: 'France (+33)', country: 'FR' },
+    { code: '+86', label: 'China (+86)', country: 'CN' },
+  ];
 
   const systemFields = [
     { key: 'phone', label: 'Phone Number', required: true },
@@ -165,6 +179,7 @@ const ImportModal = ({ isOpen, onClose, campaigns, onSuccess }) => {
       formData.append('file', file);
       formData.append('campaignId', campaignId);
       formData.append('fieldMapping', JSON.stringify(fieldMapping));
+      formData.append('countryCode', countryCode);
 
       const response = await api.post('/leads/import', formData, {
         headers: {
@@ -196,6 +211,7 @@ const ImportModal = ({ isOpen, onClose, campaigns, onSuccess }) => {
     setFileColumns([]);
     setFieldMapping({});
     setPreviewData([]);
+    setCountryCode('+1');
     onClose();
   };
 
@@ -245,6 +261,27 @@ const ImportModal = ({ isOpen, onClose, campaigns, onSuccess }) => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Country Code Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number Country
+                </label>
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  className="input"
+                >
+                  {countryCodes.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  This will be used to format phone numbers that don't have a country code
+                </p>
               </div>
 
               {/* File Upload */}
