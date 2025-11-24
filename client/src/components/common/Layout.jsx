@@ -55,21 +55,19 @@ const Layout = () => {
     <div className="min-h-screen bg-gray-100">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white transform transition-transform duration-200 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 z-50 bg-gray-900 text-white transition-all duration-200 ${
+          sidebarOpen ? 'w-64' : 'w-16'
         }`}
       >
-        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
-          <h1 className="text-xl font-bold">ScrubAI</h1>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden"
-          >
-            <X className="h-6 w-6" />
-          </button>
+        <div className={`flex items-center h-16 px-4 border-b border-gray-800 ${sidebarOpen ? 'justify-between' : 'justify-center'}`}>
+          {sidebarOpen ? (
+            <h1 className="text-xl font-bold">ScrubAI</h1>
+          ) : (
+            <span className="text-xl font-bold">S</span>
+          )}
         </div>
 
-        <nav className="mt-6 px-3">
+        <nav className="mt-6 px-2">
           {filteredNavigation.map((item) => (
             <NavLink
               key={item.name}
@@ -79,28 +77,30 @@ const Layout = () => {
                   isActive
                     ? 'bg-primary-600 text-white'
                     : 'text-gray-300 hover:bg-gray-800'
-                }`
+                } ${sidebarOpen ? '' : 'justify-center'}`
               }
+              title={!sidebarOpen ? item.name : ''}
             >
-              <item.icon className="h-5 w-5 mr-3" />
-              {item.name}
+              <item.icon className={`h-5 w-5 ${sidebarOpen ? 'mr-3' : ''}`} />
+              {sidebarOpen && item.name}
             </NavLink>
           ))}
         </nav>
 
-        <div className="absolute bottom-0 w-full p-4 border-t border-gray-800">
+        <div className={`absolute bottom-0 w-full p-4 border-t border-gray-800 ${sidebarOpen ? '' : 'px-2'}`}>
           <button
             onClick={handleLogout}
-            className="flex items-center w-full px-3 py-2 text-gray-300 hover:bg-gray-800 rounded-lg"
+            className={`flex items-center w-full px-3 py-2 text-gray-300 hover:bg-gray-800 rounded-lg ${sidebarOpen ? '' : 'justify-center'}`}
+            title={!sidebarOpen ? 'Logout' : ''}
           >
-            <LogOut className="h-5 w-5 mr-3" />
-            Logout
+            <LogOut className={`h-5 w-5 ${sidebarOpen ? 'mr-3' : ''}`} />
+            {sidebarOpen && 'Logout'}
           </button>
         </div>
       </aside>
 
       {/* Main content */}
-      <div className={`transition-all duration-200 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
+      <div className={`transition-all duration-200 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
         {/* Header */}
         <header className="h-16 bg-white shadow-sm flex items-center justify-between px-4">
           <button
