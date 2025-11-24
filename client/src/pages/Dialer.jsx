@@ -107,11 +107,20 @@ const Dialer = () => {
           const vapiStatus = callData.vapiDetails?.status;
           const dbStatus = callData.status;
 
+          // Debug logging - check browser console to see what VAPI returns
+          console.log('Call status check:', {
+            vapiStatus,
+            dbStatus,
+            vapiDetails: callData.vapiDetails,
+            fullData: callData
+          });
+
           // Check if call has ended - multiple conditions
           const endedStatuses = ['ended', 'failed', 'busy', 'no-answer'];
           const dbEndedStatuses = ['completed', 'failed', 'no_answer'];
 
           if (endedStatuses.includes(vapiStatus) || dbEndedStatuses.includes(dbStatus)) {
+            console.log('Call ended detected!', { vapiStatus, dbStatus });
             setIsOnCall(false);
             setCallStatus('ended');
             setShowControls(false);
