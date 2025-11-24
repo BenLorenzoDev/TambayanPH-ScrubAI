@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSocket } from '../context/SocketContext';
 import api from '../services/api';
-import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle, Headphones, Mic, Volume2, PhoneForwarded, Send, VolumeX, Volume1 } from 'lucide-react';
+import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle, Headphones, Mic, Volume2, PhoneForwarded, Send, VolumeX, Volume1, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Dialer = () => {
@@ -22,6 +22,8 @@ const Dialer = () => {
   const [showControls, setShowControls] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [smsMessage, setSmsMessage] = useState('');
+  const [isSendingSms, setIsSendingSms] = useState(false);
 
   // WebSocket refs for live listening
   const wsRef = useRef(null);
@@ -501,6 +503,42 @@ const Dialer = () => {
     }
   };
 
+  const sendSMS = async () => {
+    if (!phoneNumber) {
+      toast.error('Please enter a phone number');
+      return;
+    }
+
+    if (!smsMessage.trim()) {
+      toast.error('Please enter a message');
+      return;
+    }
+
+    if (!phoneValidation.isValid) {
+      toast.error('Please enter a valid phone number');
+      return;
+    }
+
+    setIsSendingSms(true);
+
+    try {
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      await api.post('/sms/send', {
+        phoneNumber: normalizedPhone,
+        message: smsMessage.trim(),
+        leadId: currentLead?.id,
+        campaignId: selectedCampaign || null,
+      });
+
+      toast.success('SMS sent successfully');
+      setSmsMessage('');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to send SMS');
+    } finally {
+      setIsSendingSms(false);
+    }
+  };
+
   const saveDisposition = async () => {
     if (!currentCall || !disposition) {
       toast.error('Please select a disposition');
@@ -871,6 +909,59 @@ const Dialer = () => {
               </p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* SMS Panel */}
+      <div className="mt-6 card">
+        <h2 className="text-lg font-semibold mb-4 flex items-center">
+          <Mail className="h-5 w-5 mr-2" />
+          Send SMS
+        </h2>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              To: {phoneNumber || 'No number selected'}
+            </label>
+            {phoneNumber && phoneValidation.isValid && (
+              <p className="text-xs text-green-600">{phoneValidation.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Message
+            </label>
+            <textarea
+              value={smsMessage}
+              onChange={(e) => setSmsMessage(e.target.value)}
+              className="input min-h-[100px] resize-y"
+              placeholder="Type your message here..."
+              rows={4}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {smsMessage.length} characters
+            </p>
+          </div>
+
+          <button
+            onClick={sendSMS}
+            className="btn btn-primary w-full flex items-center justify-center"
+            disabled={!phoneNumber || !phoneValidation.isValid || !smsMessage.trim() || isSendingSms}
+          >
+            {isSendingSms ? (
+              <>
+                <span className="animate-spin mr-2">⏳</span>
+                Sending...
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4 mr-2" />
+                Send SMS
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>

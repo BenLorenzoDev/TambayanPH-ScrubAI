@@ -17,6 +17,10 @@ export default {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
 
+  sms: {
+    provider: process.env.SMS_PROVIDER || 'twilio',
+  },
+
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
     authToken: process.env.TWILIO_AUTH_TOKEN,

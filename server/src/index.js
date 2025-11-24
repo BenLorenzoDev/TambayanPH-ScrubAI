@@ -15,6 +15,7 @@ import leadRoutes from './routes/lead.routes.js';
 import callRoutes from './routes/call.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import vapiRoutes from './routes/vapi.routes.js';
+import smsRoutes from './routes/sms.routes.js';
 import { initializeSocket } from './socket/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -63,6 +64,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/vapi', vapiRoutes);
+app.use('/api/sms', smsRoutes);
 
 // Serve static files from client build in production
 if (config.env === 'production') {
