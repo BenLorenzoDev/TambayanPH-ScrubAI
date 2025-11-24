@@ -231,16 +231,26 @@ export const getNextLead = async (req, res, next) => {
       `)
       .eq('campaign_id', campaignId)
       .in('status', ['new', 'callback'])
-      .or(`assigned_agent.is.null,assigned_agent.eq.${agentId}`)
-      .order('next_callback', { ascending: true, nullsFirst: false })
       .order('priority', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(1)
       .single();
 
     if (error || !lead) {
+      // Get count to provide better error message
+      const { count } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('campaign_id', campaignId);
+
+      const { count: newCount } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('campaign_id', campaignId)
+        .in('status', ['new', 'callback']);
+
       res.status(404);
-      throw new Error('No leads available');
+      throw new Error(`No leads available (total: ${count || 0}, new/callback: ${newCount || 0})`);
     }
 
     // Update lead
