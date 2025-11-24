@@ -322,8 +322,46 @@ const Dialer = () => {
         sampleRate: 16000,
       });
 
-      // Load the AudioWorklet processor
-      await audioContextRef.current.audioWorklet.addModule('/audioProcessor.js');
+      // Create inline AudioWorklet processor
+      const processorCode = `
+        class AudioProcessor extends AudioWorkletProcessor {
+          constructor() {
+            super();
+            this.buffer = new Float32Array();
+            this.port.onmessage = (event) => {
+              const incomingData = event.data.audioData;
+              const newBuffer = new Float32Array(this.buffer.length + incomingData.length);
+              newBuffer.set(this.buffer, 0);
+              newBuffer.set(incomingData, this.buffer.length);
+              this.buffer = newBuffer;
+            };
+          }
+          process(inputs, outputs) {
+            const output = outputs[0];
+            const leftChannel = output[0];
+            const rightChannel = output[1];
+            if (!leftChannel) return true;
+            const samplesToProcess = Math.min(leftChannel.length, this.buffer.length);
+            for (let i = 0; i < leftChannel.length; i++) {
+              if (i < samplesToProcess) {
+                leftChannel[i] = this.buffer[i];
+                if (rightChannel) rightChannel[i] = this.buffer[i];
+              } else {
+                leftChannel[i] = 0;
+                if (rightChannel) rightChannel[i] = 0;
+              }
+            }
+            this.buffer = this.buffer.slice(samplesToProcess);
+            return true;
+          }
+        }
+        registerProcessor('audio-processor', AudioProcessor);
+      `;
+
+      const blob = new Blob([processorCode], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      await audioContextRef.current.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
 
       // Create AudioWorkletNode
       audioNodeRef.current = new AudioWorkletNode(audioContextRef.current, 'audio-processor', {
