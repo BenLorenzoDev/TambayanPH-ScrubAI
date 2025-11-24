@@ -104,45 +104,55 @@ const Dialer = () => {
           // Fetch call status to detect if call ended
           const statusResponse = await api.get(`/vapi/call/${currentCall.call.id}/status`);
           const callData = statusResponse.data.data;
+          const vapiStatus = callData.vapiDetails?.status;
 
-          // Check if call has ended
-          if (callData.status === 'completed' || callData.status === 'ended' ||
-              callData.vapiDetails?.status === 'ended') {
+          // Only consider call ended if VAPI explicitly says "ended"
+          // and we have an endedAt timestamp or endedReason
+          if (vapiStatus === 'ended' &&
+              (callData.vapiDetails?.endedAt || callData.vapiDetails?.endedReason)) {
             setIsOnCall(false);
             setCallStatus('ended');
             setShowControls(false);
-            toast.info('Call ended');
+            toast.info(`Call ended: ${callData.vapiDetails?.endedReason || 'completed'}`);
             return; // Stop polling
           }
 
-          // Fetch transcript
-          const transcriptResponse = await api.get(`/vapi/call/${currentCall.call.id}/transcript`);
-          if (transcriptResponse.data.data && transcriptResponse.data.data.length > 0) {
-            // Format transcript messages
-            const formattedTranscript = transcriptResponse.data.data.map(msg => ({
-              role: msg.role || 'assistant',
-              content: msg.content || msg.message || msg.text || '',
-            })).filter(msg => msg.content);
+          // Update call status display based on VAPI status
+          if (vapiStatus === 'in-progress' || vapiStatus === 'forwarding') {
+            setCallStatus('in-progress');
+          } else if (vapiStatus === 'ringing' || vapiStatus === 'queued') {
+            setCallStatus('ringing');
+          }
 
-            if (formattedTranscript.length > 0) {
-              setTranscript(formattedTranscript);
+          // Fetch transcript
+          try {
+            const transcriptResponse = await api.get(`/vapi/call/${currentCall.call.id}/transcript`);
+            if (transcriptResponse.data.data && transcriptResponse.data.data.length > 0) {
+              // Format transcript messages
+              const formattedTranscript = transcriptResponse.data.data.map(msg => ({
+                role: msg.role || 'assistant',
+                content: msg.content || msg.message || msg.text || '',
+              })).filter(msg => msg.content);
+
+              if (formattedTranscript.length > 0) {
+                setTranscript(formattedTranscript);
+              }
             }
+          } catch (transcriptError) {
+            // Transcript fetch can fail without meaning call ended
           }
         } catch (error) {
-          // If we get an error fetching status, call might have ended
-          if (error.response?.status === 404) {
-            setIsOnCall(false);
-            setCallStatus('ended');
-            setShowControls(false);
-          }
+          // Only end call on 404 if we've been polling for a while
+          // Don't immediately assume call ended on first error
+          console.log('Status fetch error:', error.message);
         }
       };
 
-      // Initial fetch after 2 seconds (give call time to start)
-      const initialDelay = setTimeout(fetchCallStatus, 2000);
+      // Initial fetch after 5 seconds (give call more time to start)
+      const initialDelay = setTimeout(fetchCallStatus, 5000);
 
-      // Poll every 2 seconds
-      pollTimer = setInterval(fetchCallStatus, 2000);
+      // Poll every 3 seconds
+      pollTimer = setInterval(fetchCallStatus, 3000);
 
       return () => {
         clearTimeout(initialDelay);
