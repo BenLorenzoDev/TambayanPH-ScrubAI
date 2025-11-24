@@ -105,15 +105,18 @@ const Dialer = () => {
           const statusResponse = await api.get(`/vapi/call/${currentCall.call.id}/status`);
           const callData = statusResponse.data.data;
           const vapiStatus = callData.vapiDetails?.status;
+          const dbStatus = callData.status;
 
-          // Only consider call ended if VAPI explicitly says "ended"
-          // and we have an endedAt timestamp or endedReason
-          if (vapiStatus === 'ended' &&
-              (callData.vapiDetails?.endedAt || callData.vapiDetails?.endedReason)) {
+          // Check if call has ended - multiple conditions
+          const endedStatuses = ['ended', 'failed', 'busy', 'no-answer'];
+          const dbEndedStatuses = ['completed', 'failed', 'no_answer'];
+
+          if (endedStatuses.includes(vapiStatus) || dbEndedStatuses.includes(dbStatus)) {
             setIsOnCall(false);
             setCallStatus('ended');
             setShowControls(false);
-            toast.info(`Call ended: ${callData.vapiDetails?.endedReason || 'completed'}`);
+            const reason = callData.vapiDetails?.endedReason || callData.notes || 'completed';
+            toast.info(`Call ended: ${reason}`);
             return; // Stop polling
           }
 
