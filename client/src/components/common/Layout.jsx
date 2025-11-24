@@ -57,7 +57,7 @@ const Layout = () => {
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white transform transition-transform duration-200 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0`}
+        }`}
       >
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
           <h1 className="text-xl font-bold">ScrubAI</h1>
@@ -100,7 +100,7 @@ const Layout = () => {
       </aside>
 
       {/* Main content */}
-      <div className={`${sidebarOpen ? 'lg:ml-64' : ''}`}>
+      <div className={`transition-all duration-200 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
         {/* Header */}
         <header className="h-16 bg-white shadow-sm flex items-center justify-between px-4">
           <button
