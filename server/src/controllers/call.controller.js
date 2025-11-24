@@ -393,3 +393,34 @@ export const updateCallDisposition = async (req, res, next) => {
     next(error);
   }
 };
+
+export const updateCall = async (req, res, next) => {
+  try {
+    const { agent_id, status, notes } = req.body;
+
+    const updateData = {};
+    if (agent_id !== undefined) updateData.agent_id = agent_id;
+    if (status !== undefined) updateData.status = status;
+    if (notes !== undefined) updateData.notes = notes;
+
+    const { data: call, error } = await supabase
+      .from('calls')
+      .update(updateData)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: {
+        _id: call.id,
+        agent_id: call.agent_id,
+        status: call.status,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};

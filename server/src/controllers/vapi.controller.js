@@ -534,20 +534,77 @@ export const getActiveCalls = async (req, res, next) => {
 export const handleVapiWebhook = async (req, res, next) => {
   try {
     const event = req.body;
-    logger.info(`VAPI Webhook: ${event.type}`);
+    logger.info(`VAPI Webhook: ${event.type}`, JSON.stringify(event, null, 2));
 
     const io = req.app.get('io');
 
     switch (event.type) {
       case 'call-started':
-        // Update call status
         if (event.call?.id) {
-          await supabase
+          // Check if this is an existing outbound call or a new inbound call
+          const { data: existingCall } = await supabase
             .from('calls')
-            .update({ status: 'in-progress', started_at: new Date().toISOString() })
-            .eq('vapi_call_id', event.call.id);
+            .select('*')
+            .eq('vapi_call_id', event.call.id)
+            .single();
 
-          io.emit('call:connected', { vapiCallId: event.call.id });
+          if (existingCall) {
+            // Outbound call - update status
+            await supabase
+              .from('calls')
+              .update({ status: 'in-progress', started_at: new Date().toISOString() })
+              .eq('vapi_call_id', event.call.id);
+
+            io.emit('call:connected', { vapiCallId: event.call.id });
+          } else {
+            // Inbound call - create new record
+            const customerPhone = event.call.customer?.number || event.call.phoneNumber?.number;
+            const direction = event.call.type === 'inboundPhoneCall' ? 'inbound' : 'outbound';
+
+            if (direction === 'inbound' && customerPhone) {
+              logger.info(`Inbound call detected from ${customerPhone}`);
+
+              // Try to match with existing lead
+              const { data: matchedLead } = await supabase
+                .from('leads')
+                .select('*, campaign:campaigns(id, name)')
+                .eq('phone', customerPhone)
+                .order('last_called', { ascending: false })
+                .limit(1)
+                .single();
+
+              // Create call record for inbound call
+              const { data: newCall, error: callError } = await supabase
+                .from('calls')
+                .insert({
+                  lead_id: matchedLead?.id || null,
+                  campaign_id: matchedLead?.campaign_id || null,
+                  agent_id: null, // Will be assigned when agent accepts
+                  phone: customerPhone,
+                  direction: 'inbound',
+                  status: 'ringing',
+                  vapi_call_id: event.call.id,
+                  started_at: new Date().toISOString(),
+                })
+                .select()
+                .single();
+
+              if (callError) {
+                logger.error(`Failed to create inbound call record: ${callError.message}`);
+              } else {
+                // Emit inbound call event to all connected agents
+                io.emit('call:inbound', {
+                  callId: newCall.id,
+                  vapiCallId: event.call.id,
+                  phone: customerPhone,
+                  lead: matchedLead || null,
+                  listenUrl: event.call.monitor?.listenUrl || null,
+                });
+
+                logger.info(`Inbound call record created: ${newCall.id}`);
+              }
+            }
+          }
         }
         break;
 

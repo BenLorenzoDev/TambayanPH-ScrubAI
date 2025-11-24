@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle, Headphones, Mic, Volume2, PhoneForwarded, Send, VolumeX, Volume1, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Dialer = () => {
   const { socket } = useSocket();
+  const { user } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaign, setSelectedCampaign] = useState('');
   const [currentLead, setCurrentLead] = useState(null);
@@ -24,6 +26,8 @@ const Dialer = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [smsMessage, setSmsMessage] = useState('');
   const [isSendingSms, setIsSendingSms] = useState(false);
+  const [inboundCall, setInboundCall] = useState(null);
+  const [showInboundNotification, setShowInboundNotification] = useState(false);
 
   // WebSocket refs for live listening
   const wsRef = useRef(null);
@@ -220,14 +224,24 @@ const Dialer = () => {
         }
       });
 
+      socket.on('call:inbound', (data) => {
+        // Only show notification if not already on a call
+        if (!isOnCall) {
+          setInboundCall(data);
+          setShowInboundNotification(true);
+          toast.info(`Inbound call from ${data.phone}`);
+        }
+      });
+
       return () => {
         socket.off('call:connected');
         socket.off('call:ended');
         socket.off('call:transcript');
         socket.off('call:speech');
+        socket.off('call:inbound');
       };
     }
-  }, [socket, currentCall]);
+  }, [socket, currentCall, isOnCall]);
 
   const fetchCampaigns = async () => {
     try {
@@ -537,6 +551,55 @@ const Dialer = () => {
     } finally {
       setIsSendingSms(false);
     }
+  };
+
+  const acceptInboundCall = async () => {
+    if (!inboundCall) return;
+
+    try {
+      // Update call record to assign current agent
+      await api.patch(`/calls/${inboundCall.callId}`, {
+        agent_id: user?.id || user?._id,
+        status: 'in-progress',
+      });
+
+      // Set up call in UI
+      setCurrentCall({
+        call: { id: inboundCall.callId },
+        vapiCall: { id: inboundCall.vapiCallId },
+        listenUrl: inboundCall.listenUrl,
+        controlUrl: inboundCall.controlUrl,
+      });
+
+      // Set lead info if matched
+      if (inboundCall.lead) {
+        setCurrentLead(inboundCall.lead);
+        setPhoneNumber(inboundCall.phone);
+        if (inboundCall.lead.campaign_id) {
+          setSelectedCampaign(inboundCall.lead.campaign_id);
+        }
+      } else {
+        setPhoneNumber(inboundCall.phone);
+      }
+
+      setIsOnCall(true);
+      setCallStatus('in-progress');
+      setCallDuration(0);
+      setShowControls(true);
+      setTranscript([]);
+      setShowInboundNotification(false);
+      setInboundCall(null);
+
+      toast.success('Inbound call accepted');
+    } catch (error) {
+      toast.error('Failed to accept inbound call');
+    }
+  };
+
+  const rejectInboundCall = () => {
+    setShowInboundNotification(false);
+    setInboundCall(null);
+    toast.info('Inbound call declined');
   };
 
   const saveDisposition = async () => {
@@ -964,6 +1027,72 @@ const Dialer = () => {
           </button>
         </div>
       </div>
+
+      {/* Inbound Call Notification Modal */}
+      {showInboundNotification && inboundCall && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="text-center">
+              <div className="mb-4 flex justify-center">
+                <div className="bg-green-100 rounded-full p-4 animate-pulse">
+                  <Phone className="h-8 w-8 text-green-600" />
+                </div>
+              </div>
+
+              <h3 className="text-xl font-bold mb-2">Inbound Call</h3>
+
+              <div className="mb-4">
+                <p className="text-gray-600 text-sm mb-1">From:</p>
+                <p className="text-2xl font-mono font-semibold text-gray-900">
+                  {inboundCall.phone}
+                </p>
+              </div>
+
+              {inboundCall.lead && (
+                <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Matched Lead:</p>
+                  <p className="font-medium text-gray-900">
+                    {inboundCall.lead.first_name} {inboundCall.lead.last_name}
+                  </p>
+                  {inboundCall.lead.campaign && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      Campaign: {inboundCall.lead.campaign.name}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    Status: {inboundCall.lead.status}
+                  </p>
+                </div>
+              )}
+
+              {!inboundCall.lead && (
+                <div className="mb-4 p-3 bg-yellow-50 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    No matching lead found
+                  </p>
+                </div>
+              )}
+
+              <div className="flex space-x-3 mt-6">
+                <button
+                  onClick={rejectInboundCall}
+                  className="btn btn-secondary flex-1 flex items-center justify-center"
+                >
+                  <PhoneOff className="h-5 w-5 mr-2" />
+                  Decline
+                </button>
+                <button
+                  onClick={acceptInboundCall}
+                  className="btn btn-success flex-1 flex items-center justify-center"
+                >
+                  <Phone className="h-5 w-5 mr-2" />
+                  Accept
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

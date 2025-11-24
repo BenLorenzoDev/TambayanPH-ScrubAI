@@ -7,6 +7,7 @@ import {
   transferCall,
   getActiveCalls,
   updateCallDisposition,
+  updateCall,
 } from '../controllers/call.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 
@@ -21,6 +22,7 @@ router.get('/:id', getCall);
 router.post('/initiate', initiateCall);
 router.post('/:id/end', endCall);
 router.post('/:id/transfer', transferCall);
+router.patch('/:id', updateCall);
 router.patch('/:id/disposition', updateCallDisposition);
 
 export default router;
