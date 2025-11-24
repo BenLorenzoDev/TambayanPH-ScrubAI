@@ -314,22 +314,6 @@ const Dialer = () => {
     }
   };
 
-  const stopListening = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (audioNodeRef.current) {
-      audioNodeRef.current.disconnect();
-      audioNodeRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    setIsListening(false);
-  };
-
   const sendWhisper = async () => {
     if (!currentCall || !whisperMessage.trim()) {
       toast.error('Please enter a message');
