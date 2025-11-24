@@ -344,13 +344,23 @@ const Dialer = () => {
             const leftChannel = output[0];
             const rightChannel = output[1];
             if (!leftChannel) return true;
+
+            // Output mono to both channels (VAPI sends mono audio)
+            const samplesToPlay = Math.min(leftChannel.length, this.buffer.length);
             for (let i = 0; i < leftChannel.length; i++) {
-              leftChannel[i] = this.buffer[i * 2] || 0;
-              if (rightChannel) {
-                rightChannel[i] = this.buffer[i * 2 + 1] || 0;
+              if (i < samplesToPlay) {
+                leftChannel[i] = this.buffer[i];
+                if (rightChannel) {
+                  rightChannel[i] = this.buffer[i];
+                }
+              } else {
+                leftChannel[i] = 0;
+                if (rightChannel) {
+                  rightChannel[i] = 0;
+                }
               }
             }
-            this.buffer = this.buffer.slice(leftChannel.length * 2);
+            this.buffer = this.buffer.slice(samplesToPlay);
             return true;
           }
         }
