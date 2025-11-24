@@ -84,6 +84,7 @@ const Dialer = () => {
     fetchCampaigns();
   }, []);
 
+  // Call duration timer
   useEffect(() => {
     let timer;
     if (isOnCall && (callStatus === 'in-progress' || callStatus === 'initiated' || callStatus === 'ringing')) {
@@ -93,6 +94,42 @@ const Dialer = () => {
     }
     return () => clearInterval(timer);
   }, [isOnCall, callStatus]);
+
+  // Poll for transcript updates during active call
+  useEffect(() => {
+    let pollTimer;
+    if (isOnCall && currentCall?.call?.id) {
+      const fetchTranscript = async () => {
+        try {
+          const response = await api.get(`/vapi/call/${currentCall.call.id}/transcript`);
+          if (response.data.data && response.data.data.length > 0) {
+            // Format transcript messages
+            const formattedTranscript = response.data.data.map(msg => ({
+              role: msg.role || 'assistant',
+              content: msg.content || msg.message || msg.text || '',
+            })).filter(msg => msg.content);
+
+            if (formattedTranscript.length > 0) {
+              setTranscript(formattedTranscript);
+            }
+          }
+        } catch (error) {
+          // Silently fail - transcript polling is best effort
+        }
+      };
+
+      // Initial fetch after 3 seconds (give call time to start)
+      const initialDelay = setTimeout(fetchTranscript, 3000);
+
+      // Poll every 3 seconds
+      pollTimer = setInterval(fetchTranscript, 3000);
+
+      return () => {
+        clearTimeout(initialDelay);
+        clearInterval(pollTimer);
+      };
+    }
+  }, [isOnCall, currentCall]);
 
   useEffect(() => {
     if (socket) {
