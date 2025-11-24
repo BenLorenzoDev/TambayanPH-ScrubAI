@@ -325,7 +325,7 @@ const Dialer = () => {
       });
       console.log('AudioContext created with sample rate:', sampleRate);
 
-      // Create inline AudioWorklet processor (same as call-control-V2)
+      // Create inline AudioWorklet processor (exact copy from call-control-V2)
       const processorCode = `
         class AudioProcessor extends AudioWorkletProcessor {
           constructor() {
@@ -344,23 +344,13 @@ const Dialer = () => {
             const leftChannel = output[0];
             const rightChannel = output[1];
             if (!leftChannel) return true;
-
-            // Output mono to both channels (VAPI sends mono audio)
-            const samplesToPlay = Math.min(leftChannel.length, this.buffer.length);
             for (let i = 0; i < leftChannel.length; i++) {
-              if (i < samplesToPlay) {
-                leftChannel[i] = this.buffer[i];
-                if (rightChannel) {
-                  rightChannel[i] = this.buffer[i];
-                }
-              } else {
-                leftChannel[i] = 0;
-                if (rightChannel) {
-                  rightChannel[i] = 0;
-                }
+              leftChannel[i] = this.buffer[i * 2] || 0;
+              if (rightChannel) {
+                rightChannel[i] = this.buffer[i * 2 + 1] || 0;
               }
             }
-            this.buffer = this.buffer.slice(samplesToPlay);
+            this.buffer = this.buffer.slice(leftChannel.length * 2);
             return true;
           }
         }
