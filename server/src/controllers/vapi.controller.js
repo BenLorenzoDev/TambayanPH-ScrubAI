@@ -528,6 +528,19 @@ export const getCallTranscript = async (req, res, next) => {
 // Get active calls (for monitoring)
 export const getActiveCalls = async (req, res, next) => {
   try {
+    // First, clean up stale calls that have been "active" for too long (>1 hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await supabase
+      .from('calls')
+      .update({
+        status: 'completed',
+        ended_at: new Date().toISOString(),
+        notes: 'Auto-completed due to timeout',
+      })
+      .in('status', ['initiated', 'ringing', 'in-progress'])
+      .lt('created_at', oneHourAgo);
+
+    // Now fetch active calls
     const { data: calls, error } = await supabase
       .from('calls')
       .select(`
@@ -641,11 +654,13 @@ export const handleVapiWebhook = async (req, res, next) => {
 
       case 'call-ended':
         if (event.call?.id) {
+          logger.info(`Processing call-ended for VAPI call ID: ${event.call.id}`);
+
           const duration = event.call.endedAt && event.call.startedAt
             ? Math.round((new Date(event.call.endedAt) - new Date(event.call.startedAt)) / 1000)
             : 0;
 
-          await supabase
+          const { data: updatedCall, error: updateError } = await supabase
             .from('calls')
             .update({
               status: 'completed',
@@ -654,7 +669,15 @@ export const handleVapiWebhook = async (req, res, next) => {
               talk_time: duration,
               notes: event.call.endedReason,
             })
-            .eq('vapi_call_id', event.call.id);
+            .eq('vapi_call_id', event.call.id)
+            .select()
+            .single();
+
+          if (updateError) {
+            logger.error(`Failed to update call status to completed: ${updateError.message}`);
+          } else {
+            logger.info(`Call ${updatedCall?.id} status updated to completed`);
+          }
 
           io.emit('call:ended', {
             vapiCallId: event.call.id,
