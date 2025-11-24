@@ -253,25 +253,25 @@ export const getNextLead = async (req, res, next) => {
       throw new Error(`No leads available (total: ${count || 0}, new/callback: ${newCount || 0})`);
     }
 
-    // Update lead
+    // Only assign the agent, don't change status yet
+    // Status will change to 'contacted' when call is initiated
     await supabase
       .from('leads')
       .update({
         assigned_agent: agentId,
-        status: 'contacted',
       })
       .eq('id', lead.id);
 
     res.json({
       success: true,
       data: {
-        _id: lead.id,
+        id: lead.id,
         phone: lead.phone,
         altPhone: lead.alt_phone,
         firstName: lead.first_name,
         lastName: lead.last_name,
         email: lead.email,
-        status: 'contacted',
+        status: lead.status,
         attempts: lead.attempts,
         campaign: lead.campaigns ? {
           name: lead.campaigns.name,

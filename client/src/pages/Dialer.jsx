@@ -155,7 +155,7 @@ const Dialer = () => {
     }
 
     if (!phoneValidation.isValid) {
-      toast.error('Please enter a valid Philippine phone number');
+      toast.error('Please enter a valid phone number');
       return;
     }
 
