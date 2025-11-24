@@ -199,9 +199,26 @@ export const endCall = async (req, res, next) => {
       });
     }
 
-    // End VAPI call
+    // End VAPI call - try to get control URL for more reliable termination
     if (call.vapi_call_id) {
-      await vapiService.endCall(call.vapi_call_id);
+      try {
+        // Try to get the call details to find control URL
+        const vapiCall = await vapiService.getCall(call.vapi_call_id);
+        const listenUrl = vapiCall.monitor?.listenUrl;
+
+        if (listenUrl) {
+          const controlUrl = vapiService.getControlUrl(listenUrl);
+          logger.info(`Ending call ${call.vapi_call_id} via control URL`);
+          await vapiService.endCallViaControl(call.vapi_call_id, controlUrl);
+        } else {
+          // Fallback to DELETE endpoint if no control URL available
+          logger.info(`Ending call ${call.vapi_call_id} via DELETE endpoint`);
+          await vapiService.endCall(call.vapi_call_id);
+        }
+      } catch (vapiError) {
+        logger.error(`VAPI end call failed: ${vapiError.message}`);
+        // Continue to update database even if VAPI call fails
+      }
     }
 
     // Update call status in database
