@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import api from '../services/api';
-import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock } from 'lucide-react';
+import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Dialer = () => {
@@ -16,6 +16,63 @@ const Dialer = () => {
   const [callDuration, setCallDuration] = useState(0);
   const [transcript, setTranscript] = useState([]);
   const [disposition, setDisposition] = useState('');
+  const [phoneValidation, setPhoneValidation] = useState({ isValid: false, message: '' });
+
+  // Validate Philippine phone number
+  const validatePhoneNumber = (phone) => {
+    if (!phone) {
+      return { isValid: false, message: '' };
+    }
+
+    // Remove all non-digit characters except +
+    const cleaned = phone.replace(/[^\d+]/g, '');
+
+    // Philippine mobile number patterns
+    // +639XXXXXXXXX (E.164 format)
+    // 09XXXXXXXXX (local format)
+    // 9XXXXXXXXX (without leading 0)
+
+    const e164Pattern = /^\+639\d{9}$/;
+    const localPattern = /^09\d{9}$/;
+    const shortPattern = /^9\d{9}$/;
+
+    if (e164Pattern.test(cleaned)) {
+      return { isValid: true, message: 'Valid Philippine mobile number' };
+    } else if (localPattern.test(cleaned)) {
+      return { isValid: true, message: 'Valid Philippine mobile number' };
+    } else if (shortPattern.test(cleaned)) {
+      return { isValid: true, message: 'Valid Philippine mobile number' };
+    } else if (cleaned.length < 10) {
+      return { isValid: false, message: 'Phone number is too short' };
+    } else if (cleaned.length > 13) {
+      return { isValid: false, message: 'Phone number is too long' };
+    } else if (cleaned.startsWith('+63') && cleaned.length !== 13) {
+      return { isValid: false, message: 'Invalid +63 format (should be +639XXXXXXXXX)' };
+    } else if (cleaned.startsWith('09') && cleaned.length !== 11) {
+      return { isValid: false, message: 'Invalid format (should be 09XXXXXXXXX)' };
+    } else {
+      return { isValid: false, message: 'Invalid Philippine phone number format' };
+    }
+  };
+
+  // Normalize phone number to E.164 format
+  const normalizePhoneNumber = (phone) => {
+    const cleaned = phone.replace(/[^\d+]/g, '');
+
+    if (cleaned.startsWith('+63')) {
+      return cleaned;
+    } else if (cleaned.startsWith('09')) {
+      return '+63' + cleaned.substring(1);
+    } else if (cleaned.startsWith('9') && cleaned.length === 10) {
+      return '+63' + cleaned;
+    }
+    return cleaned;
+  };
+
+  // Update validation when phone number changes
+  useEffect(() => {
+    setPhoneValidation(validatePhoneNumber(phoneNumber));
+  }, [phoneNumber]);
 
   useEffect(() => {
     fetchCampaigns();
@@ -94,11 +151,19 @@ const Dialer = () => {
       return;
     }
 
+    if (!phoneValidation.isValid) {
+      toast.error('Please enter a valid Philippine phone number');
+      return;
+    }
+
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
     try {
       // Use VAPI to make the call
       const response = await api.post('/vapi/call', {
         leadId: currentLead?.id,
         campaignId: selectedCampaign,
+        phoneNumber: normalizedPhone,
       });
 
       setCurrentCall(response.data.data);
@@ -220,14 +285,31 @@ const Dialer = () => {
                 Phone Number
               </label>
               <div className="flex space-x-2">
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  className="input"
-                  placeholder="+63 9XX XXX XXXX"
-                  disabled={isOnCall}
-                />
+                <div className="flex-1 relative">
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    className={`input pr-10 ${
+                      phoneNumber
+                        ? phoneValidation.isValid
+                          ? 'border-green-500 focus:ring-green-500'
+                          : 'border-red-500 focus:ring-red-500'
+                        : ''
+                    }`}
+                    placeholder="+63 9XX XXX XXXX"
+                    disabled={isOnCall}
+                  />
+                  {phoneNumber && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      {phoneValidation.isValid ? (
+                        <CheckCircle className="h-5 w-5 text-green-500" />
+                      ) : (
+                        <AlertCircle className="h-5 w-5 text-red-500" />
+                      )}
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={fetchNextLead}
                   className="btn btn-secondary"
@@ -237,6 +319,11 @@ const Dialer = () => {
                   <ArrowRight className="h-5 w-5" />
                 </button>
               </div>
+              {phoneNumber && phoneValidation.message && (
+                <p className={`text-xs mt-1 ${phoneValidation.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                  {phoneValidation.message}
+                </p>
+              )}
             </div>
 
             {/* Call Status */}
@@ -255,7 +342,7 @@ const Dialer = () => {
                 <button
                   onClick={initiateCall}
                   className="btn btn-success flex-1 flex items-center justify-center"
-                  disabled={!phoneNumber || !currentLead}
+                  disabled={!phoneNumber || !phoneValidation.isValid || !selectedCampaign}
                 >
                   <Phone className="h-5 w-5 mr-2" />
                   Call with AI
