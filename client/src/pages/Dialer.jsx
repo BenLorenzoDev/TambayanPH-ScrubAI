@@ -885,22 +885,22 @@ const Dialer = () => {
           </h2>
 
           <div className="h-80 overflow-y-auto space-y-3">
-            {transcript.length > 0 ? (
-              transcript.map((message, index) => (
-                <div
-                  key={index}
-                  className={`p-2 rounded-lg text-sm ${
-                    message.role === 'assistant'
-                      ? 'bg-blue-50 text-blue-900'
-                      : message.role === 'user'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'bg-yellow-50 text-yellow-900'
-                  }`}
-                >
-                  <span className="font-medium capitalize">{message.role}:</span>{' '}
-                  {message.content}
-                </div>
-              ))
+            {transcript.filter(msg => msg.role !== 'system').length > 0 ? (
+              transcript
+                .filter(msg => msg.role !== 'system')
+                .map((message, index) => (
+                  <div
+                    key={index}
+                    className={`p-2 rounded-lg text-sm ${
+                      message.role === 'assistant'
+                        ? 'bg-blue-50 text-blue-900'
+                        : 'bg-gray-100 text-gray-900'
+                    }`}
+                  >
+                    <span className="font-medium capitalize">{message.role}:</span>{' '}
+                    {message.content}
+                  </div>
+                ))
             ) : (
               <p className="text-gray-500 text-center py-8">
                 {isOnCall
