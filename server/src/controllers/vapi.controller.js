@@ -5,40 +5,64 @@ import logger from '../utils/logger.js';
 // Create outbound call using VAPI
 export const createVapiCall = async (req, res, next) => {
   try {
-    const { leadId, campaignId } = req.body;
+    const { leadId, campaignId, phoneNumber } = req.body;
     const agentId = req.user.id;
 
-    // Get lead details
-    const { data: lead, error: leadError } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('id', leadId)
-      .single();
-
-    if (leadError || !lead) {
-      return res.status(404).json({
+    // Validate campaign
+    if (!campaignId) {
+      return res.status(400).json({
         success: false,
-        message: 'Lead not found',
+        message: 'Campaign ID is required',
+      });
+    }
+
+    let lead = null;
+    let phoneToCall = phoneNumber;
+
+    // Get lead details if leadId provided
+    if (leadId) {
+      const { data: leadData, error: leadError } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .single();
+
+      if (leadError || !leadData) {
+        return res.status(404).json({
+          success: false,
+          message: 'Lead not found',
+        });
+      }
+
+      lead = leadData;
+      // Use phone from request or fall back to lead's phone
+      phoneToCall = phoneNumber || lead.phone;
+    }
+
+    if (!phoneToCall) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required',
       });
     }
 
     // Create call with VAPI
-    const vapiCall = await vapiService.createCall(lead.phone, leadId, {
-      leadId,
+    const vapiCall = await vapiService.createCall(phoneToCall, leadId || 'manual', {
+      leadId: leadId || null,
       campaignId,
       agentId,
-      firstName: lead.first_name,
-      lastName: lead.last_name,
+      firstName: lead?.first_name || 'Customer',
+      lastName: lead?.last_name || '',
     });
 
     // Create call record in database
     const { data: call, error: callError } = await supabase
       .from('calls')
       .insert({
-        lead_id: leadId,
+        lead_id: leadId || null,
         campaign_id: campaignId,
         agent_id: agentId,
-        phone_number: lead.phone,
+        phone_number: phoneToCall,
         direction: 'outbound',
         status: 'initiated',
         vapi_call_id: vapiCall.id,
@@ -48,24 +72,26 @@ export const createVapiCall = async (req, res, next) => {
 
     if (callError) throw callError;
 
-    // Update lead status
-    await supabase
-      .from('leads')
-      .update({
-        status: 'calling',
-        last_called: new Date().toISOString(),
-        attempts: lead.attempts + 1,
-      })
-      .eq('id', leadId);
+    // Update lead status if we have a lead
+    if (lead) {
+      await supabase
+        .from('leads')
+        .update({
+          status: 'calling',
+          last_called: new Date().toISOString(),
+          attempts: (lead.attempts || 0) + 1,
+        })
+        .eq('id', leadId);
+    }
 
     // Emit socket event for real-time updates
     const io = req.app.get('io');
     io.emit('call:started', {
       callId: call.id,
       vapiCallId: vapiCall.id,
-      leadId,
+      leadId: leadId || null,
       agentId,
-      phone: lead.phone,
+      phone: phoneToCall,
     });
 
     res.status(201).json({
