@@ -317,12 +317,15 @@ const Dialer = () => {
     }
 
     try {
+      const sampleRate = 16000;
+
       // Create audio context at 16kHz to match VAPI's audio
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 16000,
+        sampleRate: sampleRate,
       });
+      console.log('AudioContext created with sample rate:', sampleRate);
 
-      // Create inline AudioWorklet processor
+      // Create inline AudioWorklet processor (same as call-control-V2)
       const processorCode = `
         class AudioProcessor extends AudioWorkletProcessor {
           constructor() {
@@ -341,17 +344,13 @@ const Dialer = () => {
             const leftChannel = output[0];
             const rightChannel = output[1];
             if (!leftChannel) return true;
-            const samplesToProcess = Math.min(leftChannel.length, this.buffer.length);
             for (let i = 0; i < leftChannel.length; i++) {
-              if (i < samplesToProcess) {
-                leftChannel[i] = this.buffer[i];
-                if (rightChannel) rightChannel[i] = this.buffer[i];
-              } else {
-                leftChannel[i] = 0;
-                if (rightChannel) rightChannel[i] = 0;
+              leftChannel[i] = this.buffer[i * 2] || 0;
+              if (rightChannel) {
+                rightChannel[i] = this.buffer[i * 2 + 1] || 0;
               }
             }
-            this.buffer = this.buffer.slice(samplesToProcess);
+            this.buffer = this.buffer.slice(leftChannel.length * 2);
             return true;
           }
         }
@@ -362,8 +361,9 @@ const Dialer = () => {
       const url = URL.createObjectURL(blob);
       await audioContextRef.current.audioWorklet.addModule(url);
       URL.revokeObjectURL(url);
+      console.log('AudioProcessor module loaded.');
 
-      // Create AudioWorkletNode
+      // Create AudioWorkletNode with stereo output
       audioNodeRef.current = new AudioWorkletNode(audioContextRef.current, 'audio-processor', {
         outputChannelCount: [2],
       });
@@ -374,12 +374,13 @@ const Dialer = () => {
       wsRef.current.binaryType = 'arraybuffer';
 
       wsRef.current.onopen = () => {
+        console.log('WebSocket connection opened.');
         setIsListening(true);
         toast.success('Now listening to call');
       };
 
       wsRef.current.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer && audioNodeRef.current) {
+        if (event.data instanceof ArrayBuffer) {
           const int16Array = new Int16Array(event.data);
           const float32Array = new Float32Array(int16Array.length);
 
@@ -390,11 +391,14 @@ const Dialer = () => {
 
           // Send audio data to AudioWorkletProcessor
           audioNodeRef.current.port.postMessage({ audioData: float32Array });
+        } else {
+          console.log('Non-audio message received:', event.data);
         }
       };
 
-      wsRef.current.onclose = () => {
-        setIsListening(false);
+      wsRef.current.onclose = (event) => {
+        console.log('WebSocket connection closed.', event.code, event.reason);
+        stopListening();
       };
 
       wsRef.current.onerror = (error) => {
@@ -404,7 +408,7 @@ const Dialer = () => {
       };
     } catch (error) {
       console.error('Failed to start listening:', error);
-      toast.error('Failed to start listening');
+      toast.error('Failed to start listening: ' + error.message);
     }
   };
 
