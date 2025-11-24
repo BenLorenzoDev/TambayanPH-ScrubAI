@@ -26,13 +26,13 @@ router.post('/call', createVapiCall);
 router.get('/call/:callId', getCallStatus);
 router.post('/call/:callId/end', endCall);
 router.get('/call/:callId/transcript', getCallTranscript);
-
-// Supervisor/Admin routes for call control
-router.use(authorize('admin', 'supervisor'));
-router.get('/calls/active', getActiveCalls);
 router.get('/call/:callId/listen', listenToCall);
 router.post('/call/:callId/whisper', whisperToCall);
 router.post('/call/:callId/barge', bargeIntoCall);
 router.post('/call/:callId/transfer', transferCall);
+
+// Supervisor/Admin routes for call control
+router.use(authorize('admin', 'supervisor'));
+router.get('/calls/active', getActiveCalls);
 
 export default router;

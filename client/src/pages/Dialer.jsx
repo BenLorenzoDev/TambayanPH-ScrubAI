@@ -294,11 +294,18 @@ const Dialer = () => {
     if (!currentCall) return;
 
     try {
-      const response = await api.post(`/vapi/call/${currentCall.call.id}/listen`);
-      toast.success('Now listening to call');
-      // The listen URL would be in response.data.data
+      const response = await api.get(`/vapi/call/${currentCall.call.id}/listen`);
+      const listenData = response.data.data;
+
+      if (listenData.monitorUrl) {
+        // Open the monitor URL in a new window/tab for listening
+        window.open(listenData.monitorUrl, '_blank');
+        toast.success('Listen stream opened');
+      } else {
+        toast.info(listenData.message || 'Listen URL not available for this call');
+      }
     } catch (error) {
-      toast.error('Failed to listen to call');
+      toast.error(error.response?.data?.message || 'Failed to listen to call');
     }
   };
 
