@@ -7,6 +7,7 @@ import {
   whisperToCall,
   bargeIntoCall,
   transferCall,
+  controlAssistant,
   getCallTranscript,
   getActiveCalls,
   handleVapiWebhook,
@@ -30,6 +31,7 @@ router.get('/call/:callId/listen', listenToCall);
 router.post('/call/:callId/whisper', whisperToCall);
 router.post('/call/:callId/barge', bargeIntoCall);
 router.post('/call/:callId/transfer', transferCall);
+router.post('/call/:callId/control', controlAssistant);
 
 // Supervisor/Admin routes for call control
 router.use(authorize('admin', 'supervisor'));

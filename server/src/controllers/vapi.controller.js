@@ -55,6 +55,32 @@ export const createVapiCall = async (req, res, next) => {
       lastName: lead?.last_name || '',
     });
 
+    // Poll for listenUrl (call needs to be answered first)
+    let listenUrl = null;
+    let controlUrl = null;
+    const maxRetries = 30;
+    const pollInterval = 2000;
+
+    for (let i = 0; i < maxRetries; i++) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      try {
+        const callDetails = await vapiService.getCall(vapiCall.id);
+        if (callDetails.monitor?.listenUrl) {
+          listenUrl = callDetails.monitor.listenUrl;
+          controlUrl = vapiService.getControlUrl(listenUrl);
+          logger.info(`Got listenUrl for call ${vapiCall.id}: ${listenUrl}`);
+          break;
+        }
+        // Check if call ended before being answered
+        if (['ended', 'failed', 'busy', 'no-answer'].includes(callDetails.status)) {
+          logger.info(`Call ${vapiCall.id} ended before being answered: ${callDetails.status}`);
+          break;
+        }
+      } catch (err) {
+        logger.warn(`Polling for listenUrl failed: ${err.message}`);
+      }
+    }
+
     // Create call record in database
     const { data: call, error: callError } = await supabase
       .from('calls')
@@ -92,6 +118,8 @@ export const createVapiCall = async (req, res, next) => {
       leadId: leadId || null,
       agentId,
       phone: phoneToCall,
+      listenUrl,
+      controlUrl,
     });
 
     res.status(201).json({
@@ -99,6 +127,8 @@ export const createVapiCall = async (req, res, next) => {
       data: {
         call,
         vapiCall,
+        listenUrl,
+        controlUrl,
       },
     });
   } catch (error) {
@@ -241,7 +271,7 @@ export const listenToCall = async (req, res, next) => {
 export const whisperToCall = async (req, res, next) => {
   try {
     const { callId } = req.params;
-    const { message } = req.body;
+    const { message, controlUrl } = req.body;
 
     if (!message) {
       return res.status(400).json({
@@ -271,7 +301,7 @@ export const whisperToCall = async (req, res, next) => {
       });
     }
 
-    const result = await vapiService.whisper(call.vapi_call_id, message);
+    const result = await vapiService.whisper(call.vapi_call_id, message, controlUrl);
 
     // Log whisper action
     logger.info(`Whisper to call ${callId} by user ${req.user.id}: ${message}`);
@@ -289,7 +319,7 @@ export const whisperToCall = async (req, res, next) => {
 export const bargeIntoCall = async (req, res, next) => {
   try {
     const { callId } = req.params;
-    const { message } = req.body;
+    const { message, controlUrl } = req.body;
 
     if (!message) {
       return res.status(400).json({
@@ -319,7 +349,7 @@ export const bargeIntoCall = async (req, res, next) => {
       });
     }
 
-    const result = await vapiService.barge(call.vapi_call_id, message);
+    const result = await vapiService.barge(call.vapi_call_id, message, controlUrl);
 
     // Log barge action
     logger.info(`Barge into call ${callId} by user ${req.user.id}: ${message}`);
@@ -337,7 +367,7 @@ export const bargeIntoCall = async (req, res, next) => {
 export const transferCall = async (req, res, next) => {
   try {
     const { callId } = req.params;
-    const { destination } = req.body;
+    const { destination, controlUrl, transferMessage } = req.body;
 
     if (!destination) {
       return res.status(400).json({
@@ -367,7 +397,7 @@ export const transferCall = async (req, res, next) => {
       });
     }
 
-    const result = await vapiService.transferCall(call.vapi_call_id, destination);
+    const result = await vapiService.transferCall(call.vapi_call_id, destination, controlUrl, transferMessage);
 
     // Update call status
     await supabase
@@ -381,6 +411,53 @@ export const transferCall = async (req, res, next) => {
       callId,
       destination,
     });
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Mute/Unmute assistant
+export const controlAssistant = async (req, res, next) => {
+  try {
+    const { callId } = req.params;
+    const { control, controlUrl } = req.body;
+
+    if (!control) {
+      return res.status(400).json({
+        success: false,
+        message: 'Control action is required (mute-assistant, unmute-assistant, say-first-message)',
+      });
+    }
+
+    // Get call from database
+    const { data: call, error } = await supabase
+      .from('calls')
+      .select('*')
+      .eq('id', callId)
+      .single();
+
+    if (error || !call) {
+      return res.status(404).json({
+        success: false,
+        message: 'Call not found',
+      });
+    }
+
+    if (!call.vapi_call_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'No VAPI call associated with this call',
+      });
+    }
+
+    const result = await vapiService.controlAssistant(call.vapi_call_id, control, controlUrl);
+
+    logger.info(`Control assistant ${callId} by user ${req.user.id}: ${control}`);
 
     res.json({
       success: true,

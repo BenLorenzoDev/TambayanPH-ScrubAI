@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSocket } from '../context/SocketContext';
 import api from '../services/api';
-import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle, Headphones, Mic, Volume2, PhoneForwarded, Send } from 'lucide-react';
+import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle, Headphones, Mic, Volume2, PhoneForwarded, Send, VolumeX, Volume1 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Dialer = () => {
@@ -20,6 +20,13 @@ const Dialer = () => {
   const [whisperMessage, setWhisperMessage] = useState('');
   const [transferNumber, setTransferNumber] = useState('');
   const [showControls, setShowControls] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // WebSocket refs for live listening
+  const wsRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const audioNodeRef = useRef(null);
 
   // Validate international phone number (E.164 format)
   const validatePhoneNumber = (phone) => {
@@ -124,6 +131,8 @@ const Dialer = () => {
             setIsOnCall(false);
             setCallStatus('ended');
             setShowControls(false);
+            setIsMuted(false);
+            stopListening();
             const reason = callData.vapiDetails?.endedReason || callData.notes || 'completed';
             toast.info(`Call ended: ${reason}`);
             return; // Stop polling
@@ -284,6 +293,8 @@ const Dialer = () => {
       setIsOnCall(false);
       setCallStatus('ended');
       setShowControls(false);
+      setIsMuted(false);
+      stopListening();
       toast.success('Call ended');
     } catch (error) {
       toast.error('Failed to end call');
@@ -293,20 +304,105 @@ const Dialer = () => {
   const listenToCall = async () => {
     if (!currentCall) return;
 
-    try {
-      const response = await api.get(`/vapi/call/${currentCall.call.id}/listen`);
-      const listenData = response.data.data;
-
-      if (listenData.monitorUrl) {
-        // Open the monitor URL in a new window/tab for listening
-        window.open(listenData.monitorUrl, '_blank');
-        toast.success('Listen stream opened');
-      } else {
-        toast.info(listenData.message || 'Listen URL not available for this call');
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to listen to call');
+    // If already listening, stop
+    if (isListening) {
+      stopListening();
+      return;
     }
+
+    const listenUrl = currentCall.listenUrl;
+    if (!listenUrl) {
+      toast.error('Listen URL not available for this call');
+      return;
+    }
+
+    try {
+      // Create audio context
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 16000,
+      });
+
+      // Create a simple audio processor using ScriptProcessorNode (more compatible)
+      const bufferSize = 4096;
+      audioNodeRef.current = audioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
+
+      let audioBuffer = new Float32Array(0);
+
+      audioNodeRef.current.onaudioprocess = (e) => {
+        const outputData = e.outputBuffer.getChannelData(0);
+        const samplesToOutput = Math.min(audioBuffer.length, outputData.length);
+
+        for (let i = 0; i < samplesToOutput; i++) {
+          outputData[i] = audioBuffer[i];
+        }
+
+        // Fill rest with silence
+        for (let i = samplesToOutput; i < outputData.length; i++) {
+          outputData[i] = 0;
+        }
+
+        // Remove used samples
+        audioBuffer = audioBuffer.slice(samplesToOutput);
+      };
+
+      audioNodeRef.current.connect(audioContextRef.current.destination);
+
+      // Connect to WebSocket
+      wsRef.current = new WebSocket(listenUrl);
+      wsRef.current.binaryType = 'arraybuffer';
+
+      wsRef.current.onopen = () => {
+        setIsListening(true);
+        toast.success('Now listening to call');
+      };
+
+      wsRef.current.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) {
+          const int16Array = new Int16Array(event.data);
+          const float32Array = new Float32Array(int16Array.length);
+
+          // Convert 16-bit PCM to Float32 [-1.0, 1.0]
+          for (let i = 0; i < int16Array.length; i++) {
+            float32Array[i] = int16Array[i] / 32768.0;
+          }
+
+          // Append to buffer
+          const newBuffer = new Float32Array(audioBuffer.length + float32Array.length);
+          newBuffer.set(audioBuffer);
+          newBuffer.set(float32Array, audioBuffer.length);
+          audioBuffer = newBuffer;
+        }
+      };
+
+      wsRef.current.onclose = () => {
+        setIsListening(false);
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        toast.error('Audio stream error');
+        stopListening();
+      };
+    } catch (error) {
+      console.error('Failed to start listening:', error);
+      toast.error('Failed to start listening');
+    }
+  };
+
+  const stopListening = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (audioNodeRef.current) {
+      audioNodeRef.current.disconnect();
+      audioNodeRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    setIsListening(false);
   };
 
   const sendWhisper = async () => {
@@ -318,6 +414,7 @@ const Dialer = () => {
     try {
       await api.post(`/vapi/call/${currentCall.call.id}/whisper`, {
         message: whisperMessage,
+        controlUrl: currentCall.controlUrl,
       });
       toast.success('Whisper sent to AI');
       setWhisperMessage('');
@@ -335,6 +432,7 @@ const Dialer = () => {
     try {
       await api.post(`/vapi/call/${currentCall.call.id}/barge`, {
         message: whisperMessage,
+        controlUrl: currentCall.controlUrl,
       });
       toast.success('Message sent to both parties');
       setWhisperMessage('');
@@ -352,13 +450,31 @@ const Dialer = () => {
     try {
       await api.post(`/vapi/call/${currentCall.call.id}/transfer`, {
         destination: transferNumber,
+        controlUrl: currentCall.controlUrl,
       });
       toast.success('Call transferred');
       setTransferNumber('');
       setIsOnCall(false);
       setCallStatus('transferred');
+      stopListening();
     } catch (error) {
       toast.error('Failed to transfer call');
+    }
+  };
+
+  const muteAssistant = async () => {
+    if (!currentCall) return;
+
+    try {
+      const control = isMuted ? 'unmute-assistant' : 'mute-assistant';
+      await api.post(`/vapi/call/${currentCall.call.id}/control`, {
+        control,
+        controlUrl: currentCall.controlUrl,
+      });
+      setIsMuted(!isMuted);
+      toast.success(isMuted ? 'Assistant unmuted' : 'Assistant muted');
+    } catch (error) {
+      toast.error('Failed to mute/unmute assistant');
     }
   };
 
@@ -536,14 +652,37 @@ const Dialer = () => {
               <div className="space-y-3 pt-4 border-t">
                 <h3 className="text-sm font-medium text-gray-700">Call Controls</h3>
 
-                {/* Listen Button */}
-                <button
-                  onClick={listenToCall}
-                  className="btn btn-secondary w-full flex items-center justify-center"
-                >
-                  <Headphones className="h-4 w-4 mr-2" />
-                  Listen to Call
-                </button>
+                {/* Listen and Mute Buttons */}
+                <div className="flex space-x-2">
+                  <button
+                    onClick={listenToCall}
+                    className={`btn flex-1 flex items-center justify-center ${
+                      isListening ? 'btn-success' : 'btn-secondary'
+                    }`}
+                  >
+                    <Headphones className="h-4 w-4 mr-2" />
+                    {isListening ? 'Listening...' : 'Listen'}
+                  </button>
+                  <button
+                    onClick={muteAssistant}
+                    className={`btn flex-1 flex items-center justify-center ${
+                      isMuted ? 'btn-warning' : 'btn-secondary'
+                    }`}
+                    title={isMuted ? 'Unmute Assistant' : 'Mute Assistant'}
+                  >
+                    {isMuted ? (
+                      <>
+                        <VolumeX className="h-4 w-4 mr-2" />
+                        Unmute
+                      </>
+                    ) : (
+                      <>
+                        <Volume1 className="h-4 w-4 mr-2" />
+                        Mute
+                      </>
+                    )}
+                  </button>
+                </div>
 
                 {/* Whisper/Barge Input */}
                 <div className="space-y-2">
