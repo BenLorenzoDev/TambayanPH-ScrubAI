@@ -558,8 +558,14 @@ export const handleVapiWebhook = async (req, res, next) => {
             io.emit('call:connected', { vapiCallId: event.call.id });
           } else {
             // Inbound call - create new record
+            logger.info(`No existing call found for VAPI call ID: ${event.call.id}`);
+            logger.info(`Call object:`, JSON.stringify(event.call, null, 2));
+
             const customerPhone = event.call.customer?.number || event.call.phoneNumber?.number;
-            const direction = event.call.type === 'inboundPhoneCall' ? 'inbound' : 'outbound';
+            const callType = event.call.type;
+            const direction = callType === 'inboundPhoneCall' ? 'inbound' : 'outbound';
+
+            logger.info(`Call details - Phone: ${customerPhone}, Type: ${callType}, Direction: ${direction}`);
 
             if (direction === 'inbound' && customerPhone) {
               logger.info(`Inbound call detected from ${customerPhone}`);
@@ -593,16 +599,21 @@ export const handleVapiWebhook = async (req, res, next) => {
                 logger.error(`Failed to create inbound call record: ${callError.message}`);
               } else {
                 // Emit inbound call event to all connected agents
-                io.emit('call:inbound', {
+                const inboundCallData = {
                   callId: newCall.id,
                   vapiCallId: event.call.id,
                   phone: customerPhone,
                   lead: matchedLead || null,
                   listenUrl: event.call.monitor?.listenUrl || null,
-                });
+                };
+
+                logger.info(`Emitting call:inbound event:`, JSON.stringify(inboundCallData, null, 2));
+                io.emit('call:inbound', inboundCallData);
 
                 logger.info(`Inbound call record created: ${newCall.id}`);
               }
+            } else {
+              logger.info(`Not processing as inbound - Direction: ${direction}, Phone: ${customerPhone}`);
             }
           }
         }

@@ -225,11 +225,15 @@ const Dialer = () => {
       });
 
       socket.on('call:inbound', (data) => {
+        console.log('🔔 Inbound call event received:', data);
         // Only show notification if not already on a call
         if (!isOnCall) {
+          console.log('✅ Showing inbound call notification');
           setInboundCall(data);
           setShowInboundNotification(true);
           toast.info(`Inbound call from ${data.phone}`);
+        } else {
+          console.log('❌ Already on a call, ignoring inbound call');
         }
       });
 
