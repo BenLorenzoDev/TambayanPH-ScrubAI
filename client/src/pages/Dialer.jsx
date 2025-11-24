@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
+import { useCall } from '../context/CallContext';
 import api from '../services/api';
 import { Phone, PhoneOff, Pause, Play, ArrowRight, MessageSquare, FileText, Clock, AlertCircle, CheckCircle, Headphones, Mic, Volume2, PhoneForwarded, Send, VolumeX, Volume1, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -8,31 +9,43 @@ import toast from 'react-hot-toast';
 const Dialer = () => {
   const { socket } = useSocket();
   const { user } = useAuth();
+  const {
+    currentCall,
+    currentLead,
+    isOnCall,
+    callStatus,
+    callDuration,
+    transcript,
+    showControls,
+    isListening,
+    isMuted,
+    wsRef,
+    audioContextRef,
+    audioNodeRef,
+    setCurrentCall,
+    setCurrentLead,
+    setIsOnCall,
+    setCallStatus,
+    setTranscript,
+    setShowControls,
+    setIsListening,
+    setIsMuted,
+    startCall,
+    clearCall,
+    stopListening,
+  } = useCall();
+
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaign, setSelectedCampaign] = useState('');
-  const [currentLead, setCurrentLead] = useState(null);
-  const [currentCall, setCurrentCall] = useState(null);
-  const [isOnCall, setIsOnCall] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [callStatus, setCallStatus] = useState('idle');
-  const [callDuration, setCallDuration] = useState(0);
-  const [transcript, setTranscript] = useState([]);
   const [disposition, setDisposition] = useState('');
   const [phoneValidation, setPhoneValidation] = useState({ isValid: false, message: '' });
   const [whisperMessage, setWhisperMessage] = useState('');
   const [transferNumber, setTransferNumber] = useState('');
-  const [showControls, setShowControls] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [smsMessage, setSmsMessage] = useState('');
   const [isSendingSms, setIsSendingSms] = useState(false);
   const [inboundCall, setInboundCall] = useState(null);
   const [showInboundNotification, setShowInboundNotification] = useState(false);
-
-  // WebSocket refs for live listening
-  const wsRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const audioNodeRef = useRef(null);
 
   // Validate international phone number (E.164 format)
   const validatePhoneNumber = (phone) => {
@@ -97,133 +110,9 @@ const Dialer = () => {
     fetchCampaigns();
   }, []);
 
-  // Call duration timer
-  useEffect(() => {
-    let timer;
-    if (isOnCall && (callStatus === 'in-progress' || callStatus === 'initiated' || callStatus === 'ringing')) {
-      timer = setInterval(() => {
-        setCallDuration((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [isOnCall, callStatus]);
-
-  // Poll for call status and transcript updates during active call
-  useEffect(() => {
-    let pollTimer;
-    if (isOnCall && currentCall?.call?.id) {
-      const fetchCallStatus = async () => {
-        try {
-          // Fetch call status to detect if call ended
-          const statusResponse = await api.get(`/vapi/call/${currentCall.call.id}`);
-          const callData = statusResponse.data.data;
-          const vapiStatus = callData.vapiDetails?.status;
-          const dbStatus = callData.status;
-
-          // Debug logging - check browser console to see what VAPI returns
-          console.log('Call status check:', {
-            vapiStatus,
-            dbStatus,
-            vapiDetails: callData.vapiDetails,
-            fullData: callData
-          });
-
-          // Check if call has ended - multiple conditions
-          const endedStatuses = ['ended', 'failed', 'busy', 'no-answer'];
-          const dbEndedStatuses = ['completed', 'failed', 'no_answer'];
-
-          if (endedStatuses.includes(vapiStatus) || dbEndedStatuses.includes(dbStatus)) {
-            console.log('Call ended detected!', { vapiStatus, dbStatus });
-            setIsOnCall(false);
-            setCallStatus('ended');
-            setShowControls(false);
-            setIsMuted(false);
-            stopListening();
-            const reason = callData.vapiDetails?.endedReason || callData.notes || 'completed';
-            toast.info(`Call ended: ${reason}`);
-            return; // Stop polling
-          }
-
-          // Update call status display based on VAPI status
-          if (vapiStatus === 'in-progress' || vapiStatus === 'forwarding') {
-            setCallStatus('in-progress');
-          } else if (vapiStatus === 'ringing' || vapiStatus === 'queued') {
-            setCallStatus('ringing');
-          }
-
-          // Fetch transcript
-          try {
-            const transcriptResponse = await api.get(`/vapi/call/${currentCall.call.id}/transcript`);
-            if (transcriptResponse.data.data && transcriptResponse.data.data.length > 0) {
-              // Format transcript messages
-              const formattedTranscript = transcriptResponse.data.data.map(msg => ({
-                role: msg.role || 'assistant',
-                content: msg.content || msg.message || msg.text || '',
-              })).filter(msg => msg.content);
-
-              if (formattedTranscript.length > 0) {
-                setTranscript(formattedTranscript);
-              }
-            }
-          } catch (transcriptError) {
-            // Transcript fetch can fail without meaning call ended
-          }
-        } catch (error) {
-          // Only end call on 404 if we've been polling for a while
-          // Don't immediately assume call ended on first error
-          console.log('Status fetch error:', error.message);
-        }
-      };
-
-      // Initial fetch after 5 seconds (give call more time to start)
-      const initialDelay = setTimeout(fetchCallStatus, 5000);
-
-      // Poll every 3 seconds
-      pollTimer = setInterval(fetchCallStatus, 3000);
-
-      return () => {
-        clearTimeout(initialDelay);
-        clearInterval(pollTimer);
-      };
-    }
-  }, [isOnCall, currentCall]);
-
+  // Handle inbound call socket events
   useEffect(() => {
     if (socket) {
-      socket.on('call:connected', (data) => {
-        if (currentCall?.vapiCall?.id === data.vapiCallId) {
-          setCallStatus('in-progress');
-          setShowControls(true);
-          toast.success('Call connected');
-        }
-      });
-
-      socket.on('call:ended', (data) => {
-        if (currentCall?.vapiCall?.id === data.vapiCallId) {
-          setIsOnCall(false);
-          setCallStatus('ended');
-          setShowControls(false);
-          toast.info(`Call ended: ${data.reason || 'completed'}`);
-        }
-      });
-
-      socket.on('call:transcript', (data) => {
-        if (currentCall?.vapiCall?.id === data.vapiCallId) {
-          // Handle both array and single message format
-          if (Array.isArray(data.transcript)) {
-            setTranscript(data.transcript);
-          } else if (data.transcript) {
-            setTranscript(prev => [...prev, data.transcript]);
-          }
-        }
-      });
-
-      socket.on('call:speech', (data) => {
-        if (currentCall?.vapiCall?.id === data.vapiCallId) {
-          // Could be used to show speaking indicators
-        }
-      });
-
       socket.on('call:inbound', (data) => {
         console.log('🔔 Inbound call event received:', data);
         // Only show notification if not already on a call
@@ -238,14 +127,10 @@ const Dialer = () => {
       });
 
       return () => {
-        socket.off('call:connected');
-        socket.off('call:ended');
-        socket.off('call:transcript');
-        socket.off('call:speech');
         socket.off('call:inbound');
       };
     }
-  }, [socket, currentCall, isOnCall]);
+  }, [socket, isOnCall]);
 
   const fetchCampaigns = async () => {
     try {
@@ -294,18 +179,15 @@ const Dialer = () => {
         phoneNumber: normalizedPhone,
       });
 
-      setCurrentCall(response.data.data);
-      setIsOnCall(true);
-      setCallStatus('in-progress');
-      setCallDuration(0);
-      setShowControls(true);
+      // Use context's startCall method to persist state
+      startCall(response.data.data, currentLead);
       toast.success('Call initiated with AI assistant');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to initiate call');
     }
   };
 
-  const endCall = async () => {
+  const endCallHandler = async () => {
     if (!currentCall) return;
 
     try {
@@ -567,17 +449,18 @@ const Dialer = () => {
         status: 'in-progress',
       });
 
-      // Set up call in UI
-      setCurrentCall({
+      const callData = {
         call: { id: inboundCall.callId },
         vapiCall: { id: inboundCall.vapiCallId },
         listenUrl: inboundCall.listenUrl,
         controlUrl: inboundCall.controlUrl,
-      });
+      };
+
+      // Use context's startCall method to persist state
+      startCall(callData, inboundCall.lead);
 
       // Set lead info if matched
       if (inboundCall.lead) {
-        setCurrentLead(inboundCall.lead);
         setPhoneNumber(inboundCall.phone);
         if (inboundCall.lead.campaign_id) {
           setSelectedCampaign(inboundCall.lead.campaign_id);
@@ -586,11 +469,6 @@ const Dialer = () => {
         setPhoneNumber(inboundCall.phone);
       }
 
-      setIsOnCall(true);
-      setCallStatus('in-progress');
-      setCallDuration(0);
-      setShowControls(true);
-      setTranscript([]);
       setShowInboundNotification(false);
       setInboundCall(null);
 
@@ -639,12 +517,9 @@ const Dialer = () => {
       toast.success('Disposition saved');
 
       // Reset for next call
-      setCurrentCall(null);
-      setCurrentLead(null);
+      clearCall();
       setPhoneNumber('');
-      setTranscript([]);
       setDisposition('');
-      setCallStatus('idle');
     } catch (error) {
       toast.error('Failed to save disposition');
     }
@@ -766,7 +641,7 @@ const Dialer = () => {
                 </button>
               ) : (
                 <button
-                  onClick={endCall}
+                  onClick={endCallHandler}
                   className="btn btn-danger flex-1 flex items-center justify-center"
                 >
                   <PhoneOff className="h-5 w-5 mr-2" />
